@@ -1006,7 +1006,7 @@ function Workbench({
 
           <button
             className="topbar-settings-btn"
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={() => setIsSettingsOpen((prev) => !prev)}
             title="Aholo API Settings"
             aria-label="Aholo API Settings"
           >
@@ -1055,7 +1055,7 @@ function Workbench({
         <div className="code-panel">
           <div>
             <div className="code-panel-header-row">
-              <div className="eyebrow">YOUR MODEL → YOUR REACT SITE</div>
+              <div className="eyebrow">AHOLO LUX3D ASSET → REACT THREE FIBER</div>
               <button
                 type="button"
                 className="code-panel-close"
@@ -1068,7 +1068,7 @@ function Workbench({
             <h2>Take this scene with you.</h2>
             <p className="integration-summary">{model.filename} · {notes.length} annotation{notes.length === 1 ? '' : 's'} · Code updates as you edit.</p>
             <ol className="integration-steps">
-              <li><strong>Install the local SpatialKit preview.</strong><p>In the SpatialKit repository, run <code>npm run build</code> and <code>npm pack</code>. Install the generated <code>spatialkit-0.1.0.tgz</code> in your React app with <code>npm install /path/to/spatialkit-0.1.0.tgz</code>. This preview is not published to npm yet.</p><code className="install-command">{INSTALL_COMMAND}</code></li>
+              <li><strong>Install standard 3D web dependencies.</strong><p>In your React or Next.js app, install Three.js and React Three Fiber:</p><code className="install-command">npm install three @types/three @react-three/fiber @react-three/drei</code></li>
               <li><strong>Add your model.</strong><p>Save the model below as <code>public/models/{publicFilename(model.filename)}</code> in your project.</p><button className="copy-button" onClick={downloadModel}>Download model ↓</button></li>
               <li><strong>Add the component.</strong><p>Save this code as <code>ModelViewer.tsx</code>, then render <code>{'<ModelViewer />'}</code> in your page. React 18 + Fiber 8 are the tested versions. In Next.js, load this component with <code>dynamic(() =&gt; import('./ModelViewer'), {'{ ssr: false }'})</code> from a client component.</p></li>
               <li><strong>Preview and deploy.</strong><p>Run your app’s development server. Include the model in your deployed public files; visitors can then view it and its annotations in a WebGL-enabled browser. No webcam is needed.</p></li>

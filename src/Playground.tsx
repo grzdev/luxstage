@@ -579,6 +579,7 @@ export function Playground({
   onNotesChange,
   onOpenGuide,
   onDownloadModel,
+  onOpenSynthesize,
 }: {
   model: ModelAsset;
   onUpload: (file: File) => void;
@@ -592,6 +593,7 @@ export function Playground({
   onNotesChange?: (notes: Note[]) => void;
   onOpenGuide?: () => void;
   onDownloadModel?: () => void;
+  onOpenSynthesize?: () => void;
 }) {
   const controlsRef = useRef<ComponentRef<typeof BlenderControls>>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -1138,7 +1140,7 @@ export function Playground({
           </span>
         ) : (
           <span className="credit-text">
-            <span>Model from</span> <strong className="credit-name">SpatialKit</strong>
+            <span>Powered by</span> <strong className="credit-name">Aholo Lux3D</strong>
           </span>
         )}
       </div>
@@ -1857,24 +1859,20 @@ export function Playground({
         <button
           type="button"
           className={`playground-upload-cta ${activeTool === 'inspect' && tourPanelOpen ? 'under-panel' : 'top-left-corner'}`}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={onOpenSynthesize || (() => fileInputRef.current?.click())}
           disabled={uploading}
-          title={`Upload your own 3D model (.glb / .gltf up to ${MAX_MODEL_MB} MB)`}
+          title="Synthesize 3D Model with Aholo Lux3D or Upload GLB"
         >
           <span className="upload-cta-main">
-            <span className="upload-cta-icon" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
+            <span className="upload-cta-icon" aria-hidden="true" style={{ fontSize: 13, color: '#38bdf8' }}>
+              ✦
             </span>
             <span className="upload-cta-text">
-              <strong>{uploading ? `Uploading ${uploadProgress?.percent ?? 0}%…` : 'Upload 3D Model'}</strong>
-              <small>.GLB / .GLTF · UP TO {MAX_MODEL_MB}MB</small>
+              <strong>{uploading ? `Loading ${uploadProgress?.percent ?? 0}%…` : '✦ Synthesize 3D Model'}</strong>
+              <small>AI PROMPT / IMAGE / GLB · LUX3D</small>
             </span>
           </span>
-          <span className="upload-cta-badge">↑ Browse</span>
+          <span className="upload-cta-badge">✦ Generate</span>
         </button>
       </div>
 
