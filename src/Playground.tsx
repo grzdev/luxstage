@@ -1,0 +1,2763 @@
+import {
+  Suspense,
+  useRef,
+  useState,
+  useEffect,
+  useMemo,
+  type ComponentRef,
+} from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { AdaptiveDpr, ContactShadows, Html } from '@react-three/drei';
+import { Box3, Mesh, Plane, Vector3 } from 'three';
+import {
+  Annotation,
+  BlenderControls,
+  SelectableModel,
+  SelectableObject,
+  SpatialProvider,
+  useSpatial,
+  type JoystickValue,
+  type SpatialPart,
+  type SurfaceHit,
+} from 'spatialkit/react';
+import {
+  ENVIRONMENT_PRESETS,
+  InteractiveModelRig,
+  type ActiveModelControl,
+  type StudioEnvironmentPreset,
+} from './Workbench';
+import { MAX_MODEL_MB, MODEL_FIT, type ModelAsset, type ModelUploadProgress } from './model-files';
+import { generateComponent, publicFilename } from './integration';
+import { INITIAL_NOTES, parseNotes, notesKey, annotationOffset, loadNotesFromStorage, type Note } from './notes';
+import {
+  HorizontalMechanicalLever,
+  PullLever,
+  TactileDial,
+  TactileJoystick,
+} from './ControlsLab';
+
+function CanvasCaptureBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => string | null) | null> }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    captureRef.current = () => {
+      gl.render(scene, camera);
+      return gl.domElement.toDataURL('image/png');
+    };
+    return () => { captureRef.current = null; };
+  }, [gl, scene, camera, captureRef]);
+  return null;
+}
+
+function SceneBridge({
+  onParts,
+  selectRef,
+  onSelectedPartChange,
+}: {
+  onParts: (parts: SpatialPart[]) => void;
+  selectRef: React.MutableRefObject<(target: string | null) => void>;
+  onSelectedPartChange?: (partId: string | null) => void;
+}) {
+  const { parts, select, selectedPart } = useSpatial();
+  const prevPartsLengthRef = useRef(-1);
+  const onSelectedPartChangeRef = useRef(onSelectedPartChange);
+  onSelectedPartChangeRef.current = onSelectedPartChange;
+
+  useEffect(() => {
+    if (parts.length !== prevPartsLengthRef.current) {
+      prevPartsLengthRef.current = parts.length;
+      onParts(parts);
+    }
+  }, [parts, onParts]);
+
+  useEffect(() => {
+    selectRef.current = select;
+  }, [select, selectRef]);
+
+  const prevSelectedPartIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const curId = selectedPart?.id ?? null;
+    if (curId !== prevSelectedPartIdRef.current) {
+      prevSelectedPartIdRef.current = curId;
+      onSelectedPartChangeRef.current?.(curId);
+    }
+  }, [selectedPart]);
+
+  return null;
+}
+
+// ─── Precision SVG Glyphs for Professional CAD/Blender UI ───────────────────
+export function IconDownload() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+export function IconInspector() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      <circle cx="11" cy="11" r="3" />
+    </svg>
+  );
+}
+
+export function IconSpotlight() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  );
+}
+
+export function IconGimbal() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    </svg>
+  );
+}
+
+export function IconLift() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v18M12 3l-4 4M12 3l4 4M5 21h14" />
+    </svg>
+  );
+}
+
+export function IconScrubber() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+export function IconPalette() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10a2.5 2.5 0 0 0 2.5-2.5c0-.68-.28-1.3-.73-1.74-.44-.45-.73-1.07-.73-1.76 0-1.38 1.12-2.5 2.5-2.5H17c2.76 0 5-2.24 5-5 0-4.42-4.48-8.5-10-8.5z" />
+      <circle cx="8" cy="9.5" r="1.2" fill="currentColor" />
+      <circle cx="12" cy="7.5" r="1.2" fill="currentColor" />
+      <circle cx="16" cy="9.5" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconCalipers() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 6H3M21 12H3M21 18H3M7 6v12M17 6v12" />
+    </svg>
+  );
+}
+
+export function IconSlicer() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 2l10 20M17 2L7 22" />
+    </svg>
+  );
+}
+
+export function IconTurntable() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+    </svg>
+  );
+}
+
+export function IconCamera() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  );
+}
+
+export function IconReset() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+
+export function IconOrbit() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="12" rx="9" ry="4" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+    </svg>
+  );
+}
+
+export function IconExpand() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+    </svg>
+  );
+}
+
+export function IconHotspot() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+export function IconNotes() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
+
+export function IconChevronDown({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+// ─── Responsive Camera Framing: Centers Model by Default on Desktop, Laptop & Mobile ──
+export function ResponsiveCameraFraming({
+  controlsRef,
+  basePosition = [3.55, 2.05, 3.70],
+  target = [0, 1.02, 0],
+}: {
+  controlsRef?: React.RefObject<ComponentRef<typeof BlenderControls> | null>;
+  basePosition?: [number, number, number];
+  target?: [number, number, number];
+}) {
+  const { camera, size } = useThree();
+  const prevKeyRef = useRef<string>('');
+
+  useEffect(() => {
+    const aspect = size.width / Math.max(1, size.height);
+    const key = `${Math.round(size.width)}x${Math.round(size.height)}-${basePosition.join(',')}-${target.join(',')}`;
+    if (key === prevKeyRef.current) return;
+    prevKeyRef.current = key;
+
+    const vTarget = new Vector3(...target);
+    const vBase = new Vector3(...basePosition);
+    const vOffset = vBase.clone().sub(vTarget);
+
+    let factor = 1.0;
+    if (aspect < 1.3) {
+      // Mobile / portrait screens: pull camera distance back so full model fits horizontally
+      factor = Math.min(2.35, Math.max(1.15, 1.48 / aspect));
+    } else {
+      // Desktop & laptop screens:
+      // Side panels take 280px left and 280px right (560px total).
+      // Available width between panels is (size.width - 560).
+      // Ensure the model never gets clipped by side panels on compact laptop screens
+      const availableCenterWidth = Math.max(320, size.width - 560);
+      if (availableCenterWidth < 460) {
+        factor = Math.max(1.0, 460 / availableCenterWidth);
+      }
+      // Ensure tall models do not clip topbar or bottom dock on short laptop screens
+      if (size.height < 520) {
+        const heightFactor = Math.max(1.0, 520 / Math.max(320, size.height));
+        factor = Math.max(factor, Math.min(1.22, heightFactor));
+      }
+    }
+
+    const newPos = vTarget.clone().add(vOffset.multiplyScalar(factor));
+
+    camera.position.copy(newPos);
+    camera.lookAt(vTarget);
+    camera.updateProjectionMatrix();
+
+    if (controlsRef?.current) {
+      controlsRef.current.target.copy(vTarget);
+      controlsRef.current.update();
+      const ctrl = controlsRef.current as unknown as { saveState?: () => void };
+      ctrl.saveState?.();
+    }
+  }, [size.width, size.height, camera, controlsRef, basePosition, target]);
+
+  return null;
+}
+
+// ─── Fighter-Jet Camera Turret & Lock-On Seeker for Gimbal Basketball ───────
+export function GimbalCameraTurret({
+  active,
+  aim,
+  ballPosRef,
+  onHUDUpdate,
+  isMobile = false,
+}: {
+  active: boolean;
+  aim: JoystickValue;
+  ballPosRef: React.MutableRefObject<Vector3>;
+  onHUDUpdate: (info: {
+    isLocked: boolean;
+    screenX: number;
+    screenY: number;
+    distMeters: number;
+    inFrustum: boolean;
+    angleDeg: number;
+    heading: number;
+    pitch: number;
+  }) => void;
+  isMobile?: boolean;
+}) {
+  const { camera, size } = useThree();
+  const aimForward = useRef(new Vector3());
+  const targetDir = useRef(new Vector3());
+  const tempVec = useRef(new Vector3());
+  const wasActive = useRef(false);
+
+  useFrame(() => {
+    if (!active) {
+      wasActive.current = false;
+      return;
+    }
+
+    // Determine tactical camera station in front of flight zone
+    // Zoomed out 25-30% more for wider field of view to easily track target
+    const aspect = size.width / Math.max(1, size.height);
+    const baseZ = aspect < 1.2 ? 14.2 : 11.2;
+    const baseY = aspect < 1.2 ? 3.0 : 2.2;
+    const basePos = new Vector3(0, baseY, baseZ);
+
+    const perspCam = camera as unknown as { fov: number; updateProjectionMatrix: () => void };
+    if (perspCam.fov !== 48) {
+      perspCam.fov = 48;
+      perspCam.updateProjectionMatrix();
+    }
+
+    if (!wasActive.current) {
+      camera.position.copy(basePos);
+      wasActive.current = true;
+    } else {
+      camera.position.lerp(basePos, 0.12);
+    }
+
+    // THE CAMERA IS THE TRACKER: rotation steered smoothly by user flight joystick
+    // Left/Right joystick turns Camera Yaw (horizontal pan)
+    // Up/Down joystick tilts Camera Pitch (vertical pitch)
+    // Left/Right also applies subtle tactical aircraft bank roll
+    const targetYaw = -aim.x * 0.95;   // ~54° yaw left/right
+    const targetPitch = aim.y * 0.62;  // ~35° pitch up/down
+    const targetRoll = -aim.x * 0.10;  // fighter jet banking
+
+    camera.rotation.y += (targetYaw - camera.rotation.y) * 0.20;
+    camera.rotation.x += (targetPitch - camera.rotation.x) * 0.20;
+    camera.rotation.z += (targetRoll - camera.rotation.z) * 0.20;
+
+    // Angular check for missile lock: ray passing through camera bore-sight reticle
+    targetDir.current.copy(ballPosRef.current).sub(camera.position).normalize();
+    // On mobile, the bore-sight reticle is elevated to top 31% (NDC Y +0.38) so controls don't block it
+    const reticleNdcY = isMobile ? 0.38 : 0;
+    const aimRay = aimForward.current.set(0, reticleNdcY, 0.5).unproject(camera).sub(camera.position).normalize();
+    const angleRad = aimRay.angleTo(targetDir.current);
+    const angleDeg = (angleRad * 180) / Math.PI;
+
+    // Lock cone: within 0.18 radians (~10.3 degrees) = TARGET MISSILE LOCK!
+    const isLocked = angleRad < 0.18;
+
+    // Real-time screen-space projection of basketball
+    tempVec.current.copy(ballPosRef.current).project(camera);
+    const inFrustum = tempVec.current.z < 1;
+    const screenX = (tempVec.current.x * 0.5 + 0.5) * 100;
+    const screenY = (-tempVec.current.y * 0.5 + 0.5) * 100;
+    const distMeters = Math.round(camera.position.distanceTo(ballPosRef.current) * 10) / 10;
+    const heading = Math.round(((camera.rotation.y * (180 / Math.PI) * -1) % 360 + 360) % 360);
+    const pitch = Math.round(camera.rotation.x * (180 / Math.PI));
+
+    onHUDUpdate({ isLocked, screenX, screenY, distMeters, inFrustum, angleDeg, heading, pitch });
+  });
+
+  return null;
+}
+
+// ─── Viewport Director: 360° Turntable & Camera Focus Flight Animator ──────
+export interface CameraFocusRequest {
+  partId: string;
+  point?: [number, number, number];
+  nonce: number;
+}
+
+export function ViewportDirector({
+  turntable,
+  focusRequest,
+  controlsRef,
+}: {
+  turntable: boolean;
+  focusRequest: CameraFocusRequest | null;
+  controlsRef: React.RefObject<ComponentRef<typeof BlenderControls> | null>;
+}) {
+  const { scene, camera } = useThree();
+  const flightRef = useRef<{
+    goalTarget: Vector3;
+    goalCamera: Vector3;
+    elapsed: number;
+  } | null>(null);
+  const lastNonceRef = useRef<number>(0);
+
+  // Cancel flight on user pointer interaction
+  useEffect(() => {
+    const cancelFlight = () => { flightRef.current = null; };
+    window.addEventListener('pointerdown', cancelFlight, { passive: true });
+    window.addEventListener('wheel', cancelFlight, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', cancelFlight);
+      window.removeEventListener('wheel', cancelFlight);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!focusRequest || focusRequest.nonce === lastNonceRef.current) return;
+    lastNonceRef.current = focusRequest.nonce;
+
+    let targetMesh: Mesh | null = null;
+    scene.traverse((node) => {
+      if (
+        node instanceof Mesh &&
+        (node.userData._skPartId === focusRequest.partId ||
+          node.name === focusRequest.partId ||
+          node.userData?.spatialId === focusRequest.partId ||
+          focusRequest.partId.endsWith(`/${node.name}`))
+      ) {
+        targetMesh = node;
+      }
+    });
+    if (!targetMesh) return;
+
+    const mesh = targetMesh as Mesh;
+    mesh.updateWorldMatrix(true, true);
+    const box = new Box3().setFromObject(mesh);
+    const goalTarget = new Vector3();
+
+    if (focusRequest.point) {
+      goalTarget.set(...focusRequest.point);
+      mesh.localToWorld(goalTarget);
+    } else {
+      box.getCenter(goalTarget);
+    }
+
+    const size = box.getSize(new Vector3());
+    const radius = Math.max(size.x, size.y, size.z, 0.8);
+    const ctrl = controlsRef.current;
+    const currentTarget = ctrl?.target ?? new Vector3(0, 1, 0);
+    const offsetDir = camera.position.clone().sub(currentTarget);
+    if (offsetDir.lengthSq() < 0.001) offsetDir.set(1, 0.65, 1);
+    offsetDir.normalize();
+
+    const idealDist = Math.min(Math.max(radius * 2.6, 3.4), 7.8);
+    const goalCamera = goalTarget.clone().addScaledVector(offsetDir, idealDist);
+    goalCamera.y = Math.max(goalTarget.y + 0.55, goalCamera.y);
+
+    flightRef.current = {
+      goalTarget,
+      goalCamera,
+      elapsed: 0,
+    };
+  }, [focusRequest, scene, camera, controlsRef]);
+
+  useFrame((_, delta) => {
+    const ctrl = controlsRef.current;
+    if (!ctrl) return;
+    const dt = Math.min(delta, 0.05);
+
+    if (flightRef.current) {
+      const flight = flightRef.current;
+      flight.elapsed += dt;
+      const damp = 1 - Math.exp(-8.5 * dt);
+      ctrl.target.lerp(flight.goalTarget, damp);
+      camera.position.lerp(flight.goalCamera, damp);
+      ctrl.update();
+
+      if (
+        flight.elapsed > 0.85 ||
+        (ctrl.target.distanceToSquared(flight.goalTarget) < 0.002 &&
+          camera.position.distanceToSquared(flight.goalCamera) < 0.005)
+      ) {
+        flightRef.current = null;
+      }
+      return;
+    }
+
+    if (turntable) {
+      const offset = camera.position.clone().sub(ctrl.target);
+      const angle = dt * 0.55;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const nextX = offset.x * cos - offset.z * sin;
+      const nextZ = offset.x * sin + offset.z * cos;
+      offset.x = nextX;
+      offset.z = nextZ;
+      camera.position.copy(ctrl.target).add(offset);
+      ctrl.update();
+    }
+  });
+
+  return null;
+}
+
+const FIXED_GIMBAL_COLORS = [
+  '#070b14',
+  '#0f172a',
+  '#1e293b',
+  '#111a2c',
+  '#18181b',
+  '#262626',
+  '#312e81',
+  '#134e4a',
+  '#fed7aa',
+  '#e2e8f0',
+  '#eef2f9',
+  '#f8fafc',
+];
+
+function isLightHex(hex: string): boolean {
+  const clean = hex.replace('#', '').trim();
+  const full =
+    clean.length === 3
+      ? clean
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : clean;
+  if (full.length !== 6) return false;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return false;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55;
+}
+
+// True small mobile phone viewports (<= 640px). Laptops, desktop PCs and tablets start fully OPENED!
+function isPhoneViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth <= 640;
+}
+
+export function Playground({
+  model,
+  onUpload,
+  onDemo,
+  uploading,
+  uploadProgress,
+  uploadError,
+  onClearUploadError,
+  theme,
+  notes: propNotes,
+  onNotesChange,
+  onOpenGuide,
+  onDownloadModel,
+}: {
+  model: ModelAsset;
+  onUpload: (file: File) => void;
+  onDemo: () => void;
+  uploading: boolean;
+  uploadProgress?: ModelUploadProgress | null;
+  uploadError: string;
+  onClearUploadError?: () => void;
+  theme: 'light' | 'dark';
+  notes?: Note[];
+  onNotesChange?: (notes: Note[]) => void;
+  onOpenGuide?: () => void;
+  onDownloadModel?: () => void;
+}) {
+  const controlsRef = useRef<ComponentRef<typeof BlenderControls>>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const noteFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Mobile screen detection for responsive camera framing, layout & initial collapse state
+  const [isMobile, setIsMobile] = useState(() => isPhoneViewport());
+
+  // Active Tool Selection & Responsive Sidebar: Default to 'inspect'!
+  const [activeTool, setActiveTool] = useState<string | null>('inspect');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Control rigs & panels: start OPENED (false) on desktop/laptop screens (> 640px), collapsed ONLY on mobile phones (<= 640px)
+  const [consoleMinimized, setConsoleMinimized] = useState(() => isPhoneViewport());
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = isPhoneViewport();
+      setIsMobile((prev) => {
+        if (prev !== mobile) {
+          setConsoleMinimized(mobile);
+        }
+        return mobile;
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ─── 3D Inspector, Hotspot & Guided Tour State ──────────────────────────────
+  const storageKey = notesKey(model.id);
+  const [internalNotes, setInternalNotes] = useState<Note[]>(() => {
+    if (propNotes !== undefined) {
+      return propNotes.filter((n) => n.id !== 'starter-note' && !/inspect.*seal/i.test(n.label));
+    }
+    return loadNotesFromStorage(model.id);
+  });
+
+  const rawNotes = propNotes ?? internalNotes;
+  const notes = rawNotes.filter((n) => n.id !== 'starter-note' && !/inspect.*seal/i.test(n.label));
+  const setNotes = (updater: Note[] | ((prev: Note[]) => Note[])) => {
+    setInternalNotes((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {}
+      onNotesChange?.(next);
+      return next;
+    });
+  };
+
+  const [parts, setParts] = useState<SpatialPart[]>([]);
+  const selectRef = useRef<(target: string | null) => void>(() => {});
+  const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
+  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
+  const [pendingPoint, setPendingPoint] = useState<[number, number, number] | null>(null);
+  const [pendingWorldBeacon, setPendingWorldBeacon] = useState<[number, number, number] | null>(null);
+  const [pendingTarget, setPendingTarget] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState('');
+  const [showAssembly, setShowAssembly] = useState(false);
+  const [assemblyFilter, setAssemblyFilter] = useState('');
+  const [tourPanelOpen, setTourPanelOpen] = useState(true);
+  // Hotspots panel: start OPENED (false) on desktop/laptop screens (> 640px), collapsed ONLY on mobile phones (<= 640px)
+  // Hotspots panel: collapsed on startup for ALL screens (opens smoothly when user clicks any mesh part)
+  const [tourPanelMinimized, setTourPanelMinimized] = useState(true);
+  const [showPlacementHint, setShowPlacementHint] = useState(true);
+
+  // Auto-dismiss placement hint banner after 10 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => setShowPlacementHint(false), 10000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Reset model-specific selection & hotspot draft when switching models without changing activeTool
+  useEffect(() => {
+    setSelectedPartId(null);
+    setHighlightedNoteId(null);
+    setPendingPoint(null);
+    setPendingWorldBeacon(null);
+    setPendingTarget(null);
+    setDraftLabel('');
+    setTourActive(false);
+    setTourPanelMinimized(true);
+    setFocusRequest(null);
+    if (propNotes === undefined) {
+      setInternalNotes(loadNotesFromStorage(model.id));
+    }
+  }, [model.id]);
+
+  const isMobileElevationTool = isMobile && activeTool && activeTool !== 'inspect' && activeTool !== 'lift';
+  const mobileModelYOffset = isMobileElevationTool ? 1.25 : 0;
+
+  // Guided Feature Tour State
+  const [tourActive, setTourActive] = useState(false);
+  const [tourIndex, setTourIndex] = useState(0);
+  const [tourPaused, setTourPaused] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<CameraFocusRequest | null>(null);
+
+  function triggerCameraFocus(partId: string, point?: [number, number, number]) {
+    setFocusRequest({ partId, point, nonce: Date.now() + Math.random() });
+  }
+
+  const tourStops = useMemo(() => {
+    if (notes.length === 0) return [];
+    return notes.map((note) => {
+      const part = parts.find((p) => p.id === note.target || p.name === note.target);
+      return {
+        id: note.id,
+        partId: part?.id ?? note.target,
+        partTitle: part ? String(part.metadata?.label ?? part.name) : note.target.replace(/^[^/]+\//, ''),
+        caption: note.label,
+        point: note.point,
+      };
+    });
+  }, [notes, parts]);
+
+  // Stop tour if notes drop below 2
+  useEffect(() => {
+    if (tourActive && tourStops.length < 2) {
+      setTourActive(false);
+    }
+  }, [tourActive, tourStops.length]);
+
+  // Tour step focus
+  useEffect(() => {
+    if (!tourActive || !tourStops.length) return;
+    const safeIndex = tourIndex % tourStops.length;
+    const stop = tourStops[safeIndex];
+    if (stop) {
+      selectRef.current(stop.partId);
+      setSelectedPartId(stop.partId);
+      setHighlightedNoteId(stop.id);
+      triggerCameraFocus(stop.partId, stop.point);
+    }
+  }, [tourActive, tourIndex, tourStops]);
+
+  // Tour timer (3.2 seconds brisk rhythm per stop)
+  useEffect(() => {
+    if (!tourActive || tourPaused || tourStops.length <= 1) return;
+    const timer = setInterval(() => {
+      setTourIndex((prev) => (prev + 1) % tourStops.length);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [tourActive, tourPaused, tourStops.length]);
+
+  function handleSaveHotspot() {
+    if (!draftLabel.trim() || !pendingTarget) return;
+    const newNote: Note = {
+      id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      target: pendingTarget,
+      label: draftLabel.trim(),
+      point: pendingPoint ? [pendingPoint[0], pendingPoint[1], pendingPoint[2]] : undefined,
+    };
+    setNotes((prev) => [...prev, newNote]);
+    setDraftLabel('');
+    setPendingPoint(null);
+    setPendingWorldBeacon(null);
+    setPendingTarget(null);
+    setShowPlacementHint(false);
+  }
+
+  function handleDeleteNote(noteId: string) {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  }
+
+  function handleExportNotes() {
+    const jsonStr = JSON.stringify(notes, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${publicFilename(model.name)}-notes.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function handleImportNotes(file: File) {
+    try {
+      const text = await file.text();
+      const imported = parseNotes(text, model.id);
+      if (!imported.length) return;
+      setNotes((existing) => {
+        const existingIds = new Set(existing.map((n) => n.id));
+        const merged = [...existing];
+        for (const note of imported) {
+          if (!existingIds.has(note.id)) {
+            merged.push(note);
+            existingIds.add(note.id);
+          }
+        }
+        return merged;
+      });
+      setSnapshotToast(`Imported ${imported.length} hotspot${imported.length === 1 ? '' : 's'}`);
+      setTimeout(() => setSnapshotToast(null), 2500);
+    } catch (err) {
+      console.error('Failed to import notes:', err);
+    }
+  }
+
+  async function handleDownloadModel() {
+    if (onDownloadModel) {
+      onDownloadModel();
+      return;
+    }
+    try {
+      const blob = model.file ?? (await fetch(`/${model.filename || 'pump.glb'}`).then((r) => r.blob()));
+      if (!blob) throw new Error('Download failed');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${publicFilename(model.filename || model.name)}.glb`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.error('Failed to download model:', e);
+    }
+  }
+
+  function handleOpenGuide() {
+    if (onOpenGuide) {
+      onOpenGuide();
+    } else {
+      const snippet = generateComponent(model, notes);
+      navigator.clipboard.writeText(snippet);
+      setSnapshotToast('React component code copied to clipboard!');
+      setTimeout(() => setSnapshotToast(null), 2500);
+    }
+  }
+
+  // Mechanical Rig State
+  // Default lightDial to 1.0 (all the way to the right) so light shines straight at front face of the model!
+  const [lightDial, setLightDial] = useState(1.0);
+  const [lightBrightness, setLightBrightness] = useState(0.55); // Default in the middle!
+  const [lightHeight, setLightHeight] = useState(0.55); // Default spotlight elevation in the middle!
+  const [targetAim, setTargetAim] = useState<JoystickValue>({ x: 0, y: 0 });
+  const ballPositionRef = useRef(new Vector3(0, 2, 0));
+  const [gimbalHUD, setGimbalHUD] = useState({
+    isLocked: false,
+    screenX: 50,
+    screenY: 50,
+    distMeters: 8.5,
+    inFrustum: true,
+    angleDeg: 0,
+    heading: 0,
+    pitch: 0,
+  });
+  const [gimbalBg, setGimbalBg] = useState(() => (theme === 'dark' ? '#070b14' : '#eef2f9'));
+
+  const [liftHeight, setLiftHeight] = useState(0.0); // Minimum height rests on 3D grid line!
+  const [animationProgress, setAnimationProgress] = useState(0);
+  const [proceduralExplode, setProceduralExplode] = useState(0);
+
+  // Studio Lighting & Custom Color Backdrop
+  const [envPreset, setEnvPreset] = useState<StudioEnvironmentPreset>('showroom');
+  const [customStudioBg, setCustomStudioBg] = useState<string | null>(null);
+  const [hexInputText, setHexInputText] = useState(() => (theme === 'dark' ? '070b14' : 'eef2f9'));
+  const [showGrid, setShowGrid] = useState(true);
+
+  // Sync 3D space background with Light / Dark mode toggle
+  useEffect(() => {
+    const nextDefault =
+      theme === 'dark'
+        ? ENVIRONMENT_PRESETS[envPreset].bgDark
+        : ENVIRONMENT_PRESETS[envPreset].bgLight;
+    setCustomStudioBg(null);
+    setGimbalBg(theme === 'dark' ? '#070b14' : '#eef2f9');
+    setHexInputText(nextDefault.replace('#', ''));
+  }, [theme, envPreset]);
+
+  // Showcase Features
+  const [turntable, setTurntable] = useState(false);
+  const [shutterFlash, setShutterFlash] = useState(false);
+  const [snapshotToast, setSnapshotToast] = useState<string | null>(null);
+  const [snapshotPreview, setSnapshotPreview] = useState<{ url: string; filename: string } | null>(null);
+
+  // Slicer Cross-Section Tool: Defaults to 1.00 so full model is 100% visible by default!
+  // In CAD & 3D printing, Z is the vertical height axis (Top-to-Bottom slicing plane)
+  const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
+  const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
+  const [sectionOffset, setSectionOffset] = useState(1.0);
+
+  // Tool Selection with immediate single-tap activation (no double-click toggle bugs)
+  function selectTool(toolName: string) {
+    if (activeTool === toolName) {
+      // Tapping active dock item toggles controls collapsed / expanded
+      setConsoleMinimized((m) => !m);
+      return;
+    }
+    setActiveTool(toolName);
+    // Control rigs: on mobile phones start collapsed, on laptop/desktop start OPENED!
+    setConsoleMinimized(isPhoneViewport());
+    setCrossSectionEnabled(toolName === 'slicer');
+    if (toolName !== 'inspect') {
+      setPendingPoint(null);
+      setPendingTarget(null);
+      setHighlightedNoteId(null);
+      setTourActive(false);
+    } else {
+      // Hotspots panel: starts collapsed on all screens until a mesh part is clicked
+      setTourPanelMinimized(true);
+    }
+  }
+
+  const env = ENVIRONMENT_PRESETS[envPreset];
+  const defaultBg = theme === 'dark' ? env.bgDark : env.bgLight;
+
+  // Pitch black dark-room environment for spotlight inspection
+  const isSpotlightMode = activeTool === 'light';
+  const canvasBg = isSpotlightMode
+    ? '#010408'
+    : activeTool === 'gimbal'
+      ? gimbalBg
+      : (customStudioBg ?? defaultBg);
+  const isLightCanvas = isLightHex(canvasBg);
+  const gridPrimary = isLightCanvas
+    ? envPreset === 'warm'
+      ? '#d6d3d1'
+      : '#b8c7e0'
+    : env.gridPrimary;
+  const gridSecondary = isLightCanvas
+    ? envPreset === 'warm'
+      ? '#e7e5e4'
+      : '#d5e0f2'
+    : env.gridSecondary;
+
+  // Derive active model control from selected tool
+  const activeModelControl: ActiveModelControl = useMemo(() => {
+    if (activeTool === 'light') return 'light';
+    if (activeTool === 'gimbal') return 'target';
+    if (activeTool === 'lift') return 'lift';
+    if (activeTool === 'scrubber') return 'scrub';
+    return 'none';
+  }, [activeTool]);
+
+  // Slicing plane:
+  // In CAD & 3D printing, Z is vertical height (slices top to bottom)
+  // X is width (slices left to right)
+  // Y is depth (slices front to back)
+  const clippingPlanes = useMemo(() => {
+    if (activeTool !== 'slicer' || !crossSectionEnabled) return undefined;
+    if (sectionAxis === 'z') {
+      const normal = new Vector3(0, -1, 0);
+      // Default offset 1.0 shows 100% full unclipped model (including valve handwheel at top)
+      const constant = sectionOffset * 2.45 + 2.4;
+      return [new Plane(normal, constant)];
+    }
+    if (sectionAxis === 'x') {
+      const normal = new Vector3(-1, 0, 0);
+      const constant = sectionOffset * 2.6 + 0.6;
+      return [new Plane(normal, constant)];
+    }
+    const normal = new Vector3(0, 0, -1);
+    const constant = sectionOffset * 2.6 + 0.6;
+    return [new Plane(normal, constant)];
+  }, [activeTool, crossSectionEnabled, sectionAxis, sectionOffset]);
+
+  // Target missile lock status derived directly from camera turret angular aim
+  const isTargetLocked = gimbalHUD.isLocked;
+
+  const canvasCaptureRef = useRef<(() => string | null) | null>(null);
+
+  function captureStudioSnapshot() {
+    const canvas = viewportRef.current?.querySelector('canvas');
+    if (!canvas) return;
+    try {
+      setShutterFlash(true);
+      setTimeout(() => setShutterFlash(false), 260);
+      const captured = canvasCaptureRef.current ? canvasCaptureRef.current() : null;
+      const url = captured || canvas.toDataURL('image/png');
+      const filename = `${publicFilename(model.name)}-studio-snapshot.png`;
+      setSnapshotPreview({ url, filename });
+    } catch {
+      setSnapshotToast('Snapshot capture unavailable.');
+    }
+  }
+
+  function handleDownloadSnapshot() {
+    if (!snapshotPreview) return;
+    const a = document.createElement('a');
+    a.href = snapshotPreview.url;
+    a.download = snapshotPreview.filename;
+    a.click();
+    setSnapshotToast('Snapshot downloaded!');
+  }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        controlsRef.current?.reset();
+      } else if (e.key === 'Escape') {
+        if (snapshotPreview) {
+          setSnapshotPreview(null);
+          return;
+        }
+        if (selectedPartId) {
+          setSelectedPartId(null);
+          selectRef.current(null);
+          setHighlightedNoteId(null);
+          setPendingPoint(null);
+          setPendingWorldBeacon(null);
+          setPendingTarget(null);
+          return;
+        }
+        if (sidebarOpen) {
+          setSidebarOpen(false);
+          return;
+        }
+        setActiveTool(null);
+        setPendingPoint(null);
+        setPendingTarget(null);
+        setTourActive(false);
+        setCrossSectionEnabled(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen, snapshotPreview, selectedPartId]);
+
+  // Surface click for 3D hotspots in inspector mode
+  function handleSurfaceClick(hit: SurfaceHit) {
+    if (activeTool === 'inspect') {
+      const partId = hit.part.id;
+
+      // Automatically open the hotspots tab with ease when any part is clicked
+      setTourPanelOpen(true);
+      setTourPanelMinimized(false);
+
+      if (selectedPartId === partId) {
+        // Deselect currently selected part if clicked again
+        setSelectedPartId(null);
+        selectRef.current(null);
+        setHighlightedNoteId(null);
+        setPendingPoint(null);
+        setPendingWorldBeacon(null);
+        setPendingTarget(null);
+        return;
+      }
+      setSelectedPartId(partId);
+      selectRef.current(partId);
+
+      if (isMobile) {
+        // Pure model exploration on mobile: no pending hotspot prompt or beacon
+        setPendingPoint(null);
+        setPendingWorldBeacon(null);
+        setPendingTarget(null);
+        return;
+      }
+
+      // Check if clicked part already has a hotspot
+      const match = notes.find((n) => n.target === partId);
+      if (match) {
+        setHighlightedNoteId(match.id);
+        setPendingPoint(null);
+        setPendingWorldBeacon(null);
+        setPendingTarget(null);
+      } else {
+        // Mesh-local coordinates for Annotation pinning (dead accurate, immune to drift)
+        const localPos = hit.point.slice() as [number, number, number];
+        // World coordinates for temporary 3D beacon cursor
+        const worldPos = (hit.worldPoint ?? hit.point).slice() as [number, number, number];
+        setPendingPoint(localPos);
+        setPendingWorldBeacon(worldPos);
+        setPendingTarget(partId);
+        setHighlightedNoteId(null);
+      }
+      setConsoleMinimized(false);
+    }
+  }
+
+  return (
+    <main className="playground-workspace" ref={viewportRef} aria-label="SpatialKit 3D Playground">
+      {shutterFlash && <div className="viewport-shutter-flash" aria-hidden="true" />}
+
+      {/* ─── Topbar HUD Overlay: Right Actions Only (Clean & Uncluttered Viewport) ─── */}
+      <div className="playground-topbar" style={{ justifyContent: 'flex-end' }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".glb,.gltf"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) onUpload(file);
+          }}
+        />
+        <input
+          ref={noteFileInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) handleImportNotes(file);
+          }}
+        />
+
+        <div className="playground-top-actions">
+          {model.object && (
+            <button
+              type="button"
+              className="playground-top-btn"
+              onClick={onDemo}
+              title="Switch back to default model"
+            >
+              <span>↶ Default Model</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="playground-top-btn"
+            onClick={() => controlsRef.current?.reset()}
+            title="Reset Camera View [R]"
+          >
+            <IconReset />
+            <span>Reset [R]</span>
+          </button>
+          <button
+            type="button"
+            className={`playground-top-btn ${sidebarOpen ? 'active' : ''}`}
+            onClick={() => setSidebarOpen((s) => !s)}
+            title="Tools & Rigs Sidebar"
+          >
+            <span>☰ Tools</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Bottom-Left 3D Model Credit Badge (Aligned with bottom dock) ─── */}
+      <div className="playground-credit-badge" role="contentinfo" aria-label="3D Model Attribution">
+        <span className="credit-icon">©</span>
+        {model.object ? (
+          <span className="credit-text" title={model.name}>
+            <span>Model:</span> <strong className="credit-name">{model.name}</strong>
+          </span>
+        ) : activeTool === 'gimbal' ? (
+          <span className="credit-text">
+            <span>Model from</span> <a href="https://sketchfab.com/ikagogava" target="_blank" rel="noreferrer">Ika Gogava</a>
+          </span>
+        ) : (
+          <span className="credit-text">
+            <span>Model from</span> <strong className="credit-name">SpatialKit</strong>
+          </span>
+        )}
+      </div>
+
+      {snapshotToast && (
+        <div className="snapshot-toast" role="status">
+          <span>📷</span> {snapshotToast}
+        </div>
+      )}
+
+      {/* ─── Real-Time 3D Model Upload Spinner & Progress Bar Overlay ─── */}
+      {uploading && (
+        <div
+          className="model-upload-overlay"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 120,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(5, 9, 18, 0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              background: 'rgba(15, 23, 42, 0.96)',
+              border: '1px solid rgba(88, 221, 186, 0.35)',
+              borderRadius: 14,
+              padding: '22px 24px',
+              boxShadow: '0 24px 60px rgba(0, 0, 0, 0.75), 0 0 28px rgba(88, 221, 186, 0.16)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            {/* Spinning Wheel + Progress Ring */}
+            <div style={{ position: 'relative', width: 58, height: 58, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg
+                width="58"
+                height="58"
+                viewBox="0 0 58 58"
+                style={{ animation: 'sk-spin 1.1s linear infinite', position: 'absolute', inset: 0 }}
+              >
+                <style>{`@keyframes sk-spin { to { transform: rotate(360deg); } }`}</style>
+                <circle
+                  cx="29"
+                  cy="29"
+                  r="24"
+                  fill="none"
+                  stroke="rgba(148, 163, 184, 0.18)"
+                  strokeWidth="4"
+                />
+                <circle
+                  cx="29"
+                  cy="29"
+                  r="24"
+                  fill="none"
+                  stroke="#58ddba"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="48 110"
+                />
+              </svg>
+              <span style={{ font: '700 12px "JetBrains Mono", monospace', color: '#58ddba' }}>
+                {uploadProgress?.percent ?? 0}%
+              </span>
+            </div>
+
+            <div style={{ textAlign: 'center', width: '100%' }}>
+              <div style={{ font: '700 13px "Manrope", sans-serif', color: '#f8fafc', marginBottom: 4 }}>
+                {uploadProgress?.stage || 'Preparing 3D Model…'}
+              </div>
+              <div style={{ font: '500 10.5px "JetBrains Mono", monospace', color: '#94a3b8' }}>
+                UP TO {MAX_MODEL_MB} MB · 100% LOCAL IN BROWSER
+              </div>
+            </div>
+
+            {/* Accurate Progress Bar Track */}
+            <div
+              style={{
+                width: '100%',
+                height: 8,
+                borderRadius: 999,
+                background: 'rgba(30, 41, 59, 0.9)',
+                border: '1px solid rgba(148, 163, 184, 0.2)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${Math.max(3, Math.min(100, uploadProgress?.percent ?? 5))}%`,
+                  height: '100%',
+                  borderRadius: 999,
+                  background: 'linear-gradient(90deg, #58ddba, #38bdf8)',
+                  boxShadow: '0 0 12px rgba(88, 221, 186, 0.5)',
+                  transition: 'width 0.18s ease-out',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Upload Error Banner (So invalid / oversized models never fail silently) ─── */}
+      {uploadError && !uploading && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute',
+            top: 66,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 110,
+            maxWidth: 'calc(100% - 32px)',
+            background: 'rgba(127, 29, 29, 0.95)',
+            border: '1px solid rgba(248, 113, 113, 0.55)',
+            borderRadius: 10,
+            padding: '10px 14px',
+            color: '#fecaca',
+            font: '600 12px "Manrope", sans-serif',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            boxShadow: '0 14px 36px rgba(0, 0, 0, 0.55)',
+          }}
+        >
+          <span>⚠️ {uploadError}</span>
+          {onClearUploadError && (
+            <button
+              type="button"
+              onClick={onClearUploadError}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fecaca',
+                fontSize: 15,
+                cursor: 'pointer',
+                padding: '0 4px',
+                lineHeight: 1,
+              }}
+              aria-label="Dismiss upload error"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Hotspot Placement Instruction Banner (Desktop only) */}
+      {activeTool === 'inspect' && !tourActive && !isMobile && showPlacementHint && (
+        <div
+          className="placement-banner"
+          role="status"
+          style={{
+            position: 'absolute',
+            top: 68,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 48,
+            pointerEvents: 'none',
+            margin: 0,
+          }}
+        >
+          {pendingPoint
+            ? '✦ Point targeted on surface · Enter label in console below'
+            : '✦ Click any part or surface of the 3D model to drop a hotspot'}
+        </div>
+      )}
+
+      {/* ─── Tactical Gimbal HUD Overlay (Fighter-Jet Camera Turret & Missile Lock) ─── */}
+      {activeModelControl === 'target' && (
+        <div className="target-hud-overlay" aria-hidden="true">
+          <div className="hud-top-tape">
+            <span className="tape-heading">✦ GIMBAL CAMERA TRACKER</span>
+            <span>HDG {gimbalHUD.heading.toString().padStart(3, '0')}° · PITCH {gimbalHUD.pitch >= 0 ? `+${gimbalHUD.pitch}` : gimbalHUD.pitch}°</span>
+            <span className={`hud-status-badge ${gimbalHUD.isLocked ? 'locked' : ''}`}>
+              {gimbalHUD.isLocked ? '● TARGET LOCKED' : '○ ACQUIRING TARGET'}
+            </span>
+          </div>
+
+          {/* Real-time tracking bracket framing the moving basketball across 3D space: ORANGE -> GREEN */}
+          {gimbalHUD.inFrustum && (
+            <div
+              className={`hud-target-bracket ${gimbalHUD.isLocked ? 'is-locked' : ''}`}
+              style={{
+                position: 'absolute',
+                left: `${gimbalHUD.screenX}%`,
+                top: `${gimbalHUD.screenY}%`,
+                transform: 'translate(-50%, -50%)',
+                width: 124,
+                height: 124,
+                pointerEvents: 'none',
+                border: `2px ${gimbalHUD.isLocked ? 'solid #10b981' : 'dashed #f59e0b'}`,
+                borderRadius: 8,
+                boxShadow: gimbalHUD.isLocked ? '0 0 18px rgba(16, 185, 129, 0.45)' : undefined,
+                transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+              }}
+            >
+              <span
+                className="bracket-label"
+                style={{
+                  borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b',
+                  color: gimbalHUD.isLocked ? '#10b981' : '#f59e0b',
+                  background: gimbalHUD.isLocked ? 'rgba(6, 78, 59, 0.92)' : 'rgba(15, 23, 42, 0.88)',
+                }}
+              >
+                {gimbalHUD.isLocked
+                  ? `● BASKETBALL LOCKED · ${gimbalHUD.distMeters}m [MISSILE LOCK]`
+                  : `○ ACQUIRING BASKETBALL · ${gimbalHUD.distMeters}m (${gimbalHUD.angleDeg.toFixed(1)}° OFF)`}
+              </span>
+              <div className="bracket-corner tl" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
+              <div className="bracket-corner tr" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
+              <div className="bracket-corner bl" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
+              <div className="bracket-corner br" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
+            </div>
+          )}
+
+          {/* Optical crosshair fixed to camera bore-sight: elevated on mobile to clear bottom controls */}
+          <div
+            className="hud-reticle-center"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: isMobile ? '31%' : '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 90,
+              height: 90,
+              pointerEvents: 'none',
+            }}
+          >
+            <svg className="hud-crosshair-svg" viewBox="0 0 90 90">
+              <circle
+                cx="45"
+                cy="45"
+                r="30"
+                fill="none"
+                stroke={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'}
+                strokeWidth="1.5"
+                strokeDasharray={gimbalHUD.isLocked ? undefined : '6 4'}
+              />
+              <circle
+                cx="45"
+                cy="45"
+                r="3.5"
+                fill={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'}
+              />
+              {gimbalHUD.isLocked && (
+                <rect
+                  x="39"
+                  y="39"
+                  width="12"
+                  height="12"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="1.5"
+                />
+              )}
+              <line x1="45" y1="5" x2="45" y2="24" stroke={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'} strokeWidth="1.5" />
+              <line x1="45" y1="66" x2="45" y2="85" stroke={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'} strokeWidth="1.5" />
+              <line x1="5" y1="45" x2="24" y2="45" stroke={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'} strokeWidth="1.5" />
+              <line x1="66" y1="45" x2="85" y2="45" stroke={gimbalHUD.isLocked ? '#10b981' : '#f59e0b'} strokeWidth="1.5" />
+            </svg>
+          </div>
+
+          <div className="hud-bottom-tape">
+            <span>AZIMUTH: {(-targetAim.x * 54).toFixed(1)}°</span>
+            <span>ELEVATION: {(targetAim.y * 35).toFixed(1)}°</span>
+            <span>LOCK CONE: {gimbalHUD.angleDeg.toFixed(1)}° / 10.3°</span>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Guided Feature Tour Top HUD (Auto-Cycling Callouts) ─── */}
+      {tourActive && tourStops.length > 0 && (
+        <div className="tour-hud-card" role="region" aria-label="Guided Tour">
+          <div className="tour-hud-top">
+            <span className="tour-step-badge">
+              TOUR {String((tourIndex % tourStops.length) + 1).padStart(2, '0')} / {String(tourStops.length).padStart(2, '0')}
+            </span>
+            <strong>{tourStops[tourIndex % tourStops.length]?.partTitle}</strong>
+            <div className="tour-hud-controls">
+              <button
+                type="button"
+                aria-label="Previous tour stop"
+                onClick={() => setTourIndex((i) => (i - 1 + tourStops.length) % tourStops.length)}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                aria-label={tourPaused ? 'Resume tour' : 'Pause tour'}
+                onClick={() => setTourPaused((p) => !p)}
+              >
+                {tourPaused ? '▶' : '⏸'}
+              </button>
+              <button
+                type="button"
+                aria-label="Next tour stop"
+                onClick={() => setTourIndex((i) => (i + 1) % tourStops.length)}
+              >
+                ›
+              </button>
+              <button
+                type="button"
+                aria-label="Exit guided tour"
+                onClick={() => setTourActive(false)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="tour-hud-caption">
+            {tourStops[tourIndex % tourStops.length]?.caption}
+          </div>
+        </div>
+      )}
+
+      {/* ─── 3D Canvas with Responsive Camera Framing for Mobile & Desktop ─── */}
+      <Canvas
+        dpr={typeof window !== 'undefined' ? Math.min(1.25, window.devicePixelRatio || 1) : 1}
+        performance={{ min: 0.5 }}
+        camera={{ position: [3.55, 2.05, 3.70], fov: 40 }}
+        gl={{
+          localClippingEnabled: true,
+          // preserveDrawingBuffer removed for 3x hardware page-flipping fillrate
+          powerPreference: 'high-performance',
+        }}
+        onPointerMissed={() => {
+          if (selectedPartId) {
+            setSelectedPartId(null);
+            selectRef.current(null);
+            setHighlightedNoteId(null);
+            setPendingPoint(null);
+            setPendingWorldBeacon(null);
+            setPendingTarget(null);
+          }
+        }}
+      >
+        <color attach="background" args={[canvasBg]} />
+        <ambientLight intensity={isSpotlightMode ? 0.02 : env.ambient} />
+        <hemisphereLight args={[env.hemiSky, env.hemiGround, isSpotlightMode ? 0.02 : env.hemiIntensity]} />
+        <directionalLight position={env.keyPos} intensity={isSpotlightMode ? 0.03 : env.keyIntensity} color={env.keyColor} />
+        <directionalLight position={env.fillPos} intensity={isSpotlightMode ? 0.02 : env.fillIntensity} color={env.fillColor} />
+        {env.rimPos && !isSpotlightMode && (
+          <directionalLight position={env.rimPos} intensity={env.rimIntensity ?? 1.5} color={env.rimColor ?? '#ffffff'} />
+        )}
+
+        <Suspense fallback={<Html center><div className="scene-message">Preparing Playground…</div></Html>}>
+          <SpatialProvider>
+            <group position={[0, mobileModelYOffset, 0]}>
+              <InteractiveModelRig
+                activeControl={activeModelControl}
+                lightDial={lightDial}
+                lightBrightness={lightBrightness}
+                lightHeight={lightHeight}
+                liftHeight={liftHeight}
+                ballPositionRef={ballPositionRef}
+              >
+                {model.object ? (
+                  <group scale={activeTool === 'gimbal' ? 1.6 / MODEL_FIT : 1}>
+                    <SelectableObject
+                      object={model.object}
+                      animations={model.animations}
+                      animationProgress={model.hasAnimations ? animationProgress : undefined}
+                      explode={proceduralExplode}
+                      clippingPlanes={clippingPlanes}
+                      modelId={model.id}
+                      fit={MODEL_FIT}
+                      onSurfaceClick={handleSurfaceClick}
+                    />
+                  </group>
+                ) : activeTool === 'gimbal' ? (
+                  /* Dynamic Target: Basketball flying across 3D space */
+                  <SelectableModel
+                    src="/models/basketball.glb"
+                    modelId="basketball"
+                    fit={1.6}
+                    onSurfaceClick={handleSurfaceClick}
+                  />
+                ) : (
+                  <SelectableModel
+                    src="/pump.glb"
+                    modelId="pump"
+                    fit={MODEL_FIT}
+                    animationProgress={animationProgress}
+                    explode={proceduralExplode}
+                    clippingPlanes={clippingPlanes}
+                    onSurfaceClick={handleSurfaceClick}
+                  />
+                )}
+              </InteractiveModelRig>
+
+              <SceneBridge
+                onParts={setParts}
+                selectRef={selectRef}
+                onSelectedPartChange={(partId) => {
+                  setSelectedPartId(partId);
+                  if (!partId) {
+                    setHighlightedNoteId(null);
+                    setPendingPoint(null);
+                    setPendingWorldBeacon(null);
+                    setPendingTarget(null);
+                  }
+                }}
+              />
+
+              {/* 3D Hotspot Annotations */}
+              {activeTool === 'inspect' && notes.map((note, i) => (
+                <Annotation
+                  key={note.id}
+                  target={note.target}
+                  label={note.label}
+                  point={note.point}
+                  offset={annotationOffset(notes, i)}
+                  className="model-annotation"
+                />
+              ))}
+
+              {/* Active Locator Beacon when surface point is targeted (Desktop only) */}
+              {activeTool === 'inspect' && !isMobile && pendingWorldBeacon && (
+                <mesh position={pendingWorldBeacon}>
+                  <sphereGeometry args={[0.045, 16, 16]} />
+                  <meshBasicMaterial color="#38bdf8" depthTest={false} />
+                </mesh>
+              )}
+            </group>
+          </SpatialProvider>
+
+          <ContactShadows
+            key={model.id}
+            position={[0, mobileModelYOffset - 0.012, 0]}
+            opacity={isSpotlightMode ? 0.2 : env.shadowOpacity}
+            scale={14}
+            blur={2.4}
+            far={5}
+            resolution={256}
+            frames={1}
+          />
+        </Suspense>
+
+        {showGrid && !isSpotlightMode && env.showGrid && (
+          <gridHelper args={[20, 40, gridPrimary, gridSecondary]} position={[0, mobileModelYOffset - 0.025, 0]} />
+        )}
+
+        <AdaptiveDpr />
+        <CanvasCaptureBridge captureRef={canvasCaptureRef} />
+
+        <BlenderControls
+          ref={controlsRef}
+          makeDefault
+          enabled={activeTool !== 'gimbal'}
+          target={
+            activeTool === 'gimbal'
+              ? [0, 2.0, 0]
+              : isMobileElevationTool
+              ? [0, 0.35, 0]
+              : [0, 1.02, 0]
+          }
+          minDistance={1.8}
+          maxDistance={28}
+          enableDamping
+        />
+
+        {/* Responsive camera director: handles vertical centering on other tools; bypassed during Gimbal turret piloting */}
+        {activeTool !== 'gimbal' && (
+          <ResponsiveCameraFraming
+            controlsRef={controlsRef}
+            basePosition={isMobile ? (isMobileElevationTool ? [5.4, 3.6, 5.6] : [5.4, 3.2, 5.6]) : [3.55, 2.05, 3.70]}
+            target={isMobileElevationTool ? [0, 0.35, 0] : [0, 1.02, 0]}
+          />
+        )}
+
+        {/* Fighter-Jet Camera Turret & Lock-On Seeker: steers camera with joystick */}
+        {activeTool === 'gimbal' && (
+          <GimbalCameraTurret
+            active={activeTool === 'gimbal'}
+            aim={targetAim}
+            ballPosRef={ballPositionRef}
+            onHUDUpdate={setGimbalHUD}
+            isMobile={isMobile}
+          />
+        )}
+
+        <ViewportDirector turntable={turntable} focusRequest={focusRequest} controlsRef={controlsRef} />
+      </Canvas>
+
+      {/* ─── Left Stack: Hotspots & Tour Panel + Gradient Light-Black Upload Button ─── */}
+      <div className="playground-left-stack">
+        {activeTool === 'inspect' && tourPanelOpen && (
+          <aside
+            className={`inspector-tour-panel ${tourPanelMinimized ? 'minimized' : ''}`}
+            role="region"
+            aria-label="Hotspots and Guided Tour"
+          >
+            <div className="console-header">
+              <div
+                className="console-header-title"
+                onClick={() => setTourPanelMinimized((m) => !m)}
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                title={tourPanelMinimized ? 'Click to expand' : 'Click to collapse'}
+              >
+                <strong>✦ HOTSPOTS & TOUR</strong>
+                <span>{notes.length} STOPS · {parts.length} PARTS</span>
+              </div>
+              <div className="console-header-actions">
+                <button
+                  type="button"
+                  className="console-minimize-btn"
+                  onClick={() => setTourPanelMinimized((m) => !m)}
+                  title={tourPanelMinimized ? 'Expand panel' : 'Collapse panel'}
+                  aria-label={tourPanelMinimized ? 'Expand hotspots panel' : 'Collapse hotspots panel'}
+                >
+                  <IconChevronDown className={tourPanelMinimized ? '' : 'rotate-180'} />
+                </button>
+              </div>
+            </div>
+
+            {!tourPanelMinimized && (
+              <div className="tour-panel-body">
+                {/* Prominently highlight the currently clicked / selected part */}
+                {selectedPartId && (
+                  <div className="inspector-active-part-card">
+                    <div className="active-part-info">
+                      <span className="active-part-dot" />
+                      <span className="active-part-label">SELECTED PART:</span>
+                      <strong className="active-part-name" title={selectedPartId.replace(/^[^/]+\//, '')}>
+                        {selectedPartId.replace(/^[^/]+\//, '')}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="active-part-clear-btn"
+                      onClick={() => {
+                        setSelectedPartId(null);
+                        selectRef.current(null);
+                        setHighlightedNoteId(null);
+                        setPendingPoint(null);
+                        setPendingWorldBeacon(null);
+                        setPendingTarget(null);
+                      }}
+                      title="Deselect part"
+                      aria-label="Deselect part"
+                    >
+                      ✕ Deselect
+                    </button>
+                  </div>
+                )}
+
+                {/* Hotspots list with active selection highlight */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                  <div className="inspector-section-label">
+                    <span>SAVED HOTSPOTS ({notes.length})</span>
+                  </div>
+
+                  {notes.length > 0 ? (
+                    <div className="inspector-notes-scroll">
+                      {notes.map((note) => {
+                        const isMatch = highlightedNoteId === note.id || selectedPartId === note.target;
+                        return (
+                          <div
+                            key={note.id}
+                            className={`inspector-note-card ${isMatch ? 'active-highlight' : ''}`}
+                            onClick={() => {
+                              if (selectedPartId === note.target) {
+                                setSelectedPartId(null);
+                                setHighlightedNoteId(null);
+                                selectRef.current(null);
+                                setPendingPoint(null);
+                                setPendingWorldBeacon(null);
+                                setPendingTarget(null);
+                              } else {
+                                setSelectedPartId(note.target);
+                                setHighlightedNoteId(note.id);
+                                selectRef.current(note.target);
+                                triggerCameraFocus(note.target, note.point);
+                              }
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, gap: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span className="note-part-badge">{note.target.replace(/^[^/]+\//, '')}</span>
+                                {isMatch && <span className="note-selected-tag">● ACTIVE</span>}
+                              </div>
+                              <span className="note-label-text">{note.label}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="inspector-note-delete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteNote(note.id);
+                                if (highlightedNoteId === note.id) setHighlightedNoteId(null);
+                              }}
+                              title="Delete hotspot"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="inspector-empty-notes">
+                      No hotspots placed yet. Click on the model to place a hotspot.
+                    </div>
+                  )}
+                </div>
+
+                {/* Guided Tour Launcher (with fast 3.2s transition rhythm) */}
+                <div style={{ width: '100%' }}>
+                  {tourStops.length >= 2 ? (
+                    <button
+                      type="button"
+                      className={`inspector-tour-toggle-btn ${tourActive ? 'active' : ''}`}
+                      onClick={() => setTourActive((a) => !a)}
+                    >
+                      <span>{tourActive ? '⏹ Exit Tour' : '▶ Start Guided Feature Tour'}</span>
+                      <span style={{ fontSize: 10, opacity: 0.85 }}>({tourStops.length} stops · 3s pace)</span>
+                    </button>
+                  ) : (
+                    <div className="inspector-tour-locked-banner">
+                      Add {2 - tourStops.length} more hotspot{2 - tourStops.length === 1 ? '' : 's'} to unlock guided tour
+                    </div>
+                  )}
+                </div>
+
+                {/* Closeable Assembly Dropdown with search filter */}
+                <div className="inspector-assembly-section">
+                  <button
+                    type="button"
+                    className={`inspector-assembly-header-btn ${showAssembly ? 'open' : ''}`}
+                    onClick={() => setShowAssembly((s) => !s)}
+                  >
+                    <span>✦ Assembly Tree ({parts.length} parts)</span>
+                    <span className="assembly-toggle-indicator">{showAssembly ? 'Hide ▲' : 'Open ▼'}</span>
+                  </button>
+
+                  {showAssembly && (
+                    <div className="inspector-assembly-list">
+                      <div className="assembly-search-input-wrap">
+                        <input
+                          type="text"
+                          className="assembly-search-mini"
+                          placeholder="Filter parts…"
+                          value={assemblyFilter}
+                          onChange={(e) => setAssemblyFilter(e.target.value)}
+                        />
+                        {assemblyFilter && (
+                          <button
+                            type="button"
+                            className="assembly-search-clear"
+                            onClick={() => setAssemblyFilter('')}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      <div className="assembly-scroll-container">
+                        {parts
+                          .filter((p) => {
+                            const name = String(p.metadata?.label ?? p.name).toLowerCase();
+                            return !assemblyFilter || name.includes(assemblyFilter.toLowerCase()) || p.id.toLowerCase().includes(assemblyFilter.toLowerCase());
+                          })
+                          .map((part) => {
+                            const isSelected = selectedPartId === part.id;
+                            const hasNote = notes.some((n) => n.target === part.id);
+                            return (
+                              <button
+                                key={part.id}
+                                type="button"
+                                className={`assembly-part-item ${isSelected ? 'selected' : ''}`}
+                                onClick={() => {
+                                  if (selectedPartId === part.id) {
+                                    setSelectedPartId(null);
+                                    selectRef.current(null);
+                                    setHighlightedNoteId(null);
+                                    setPendingPoint(null);
+                                    setPendingWorldBeacon(null);
+                                    setPendingTarget(null);
+                                  } else {
+                                    setSelectedPartId(part.id);
+                                    selectRef.current(part.id);
+                                    triggerCameraFocus(part.id);
+                                    const match = notes.find((n) => n.target === part.id);
+                                    setHighlightedNoteId(match ? match.id : null);
+                                  }
+                                }}
+                              >
+                                <span className="part-mesh-icon">⬡</span>
+                                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {String(part.metadata?.label ?? part.name)}
+                                </span>
+                                {hasNote && <span className="assembly-note-dot" title="Has hotspot">●</span>}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </aside>
+        )}
+
+        {/* Prominent Gradient Light-Black Upload Button: sits right under Hotspots & Tour in Inspector, or at top-left in other tabs */}
+        <button
+          type="button"
+          className={`playground-upload-cta ${activeTool === 'inspect' && tourPanelOpen ? 'under-panel' : 'top-left-corner'}`}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          title={`Upload your own 3D model (.glb / .gltf up to ${MAX_MODEL_MB} MB)`}
+        >
+          <span className="upload-cta-main">
+            <span className="upload-cta-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </span>
+            <span className="upload-cta-text">
+              <strong>{uploading ? `Uploading ${uploadProgress?.percent ?? 0}%…` : 'Upload 3D Model'}</strong>
+              <small>.GLB / .GLTF · UP TO {MAX_MODEL_MB}MB</small>
+            </span>
+          </span>
+          <span className="upload-cta-badge">↑ Browse</span>
+        </button>
+      </div>
+
+      {/* ─── Floating Tool Console (Docked to Bottom-Right on Desktop, Compact on Mobile) ─── */}
+      {activeTool && (
+        <aside
+          className={`playground-active-console ${consoleMinimized ? 'minimized' : ''} ${activeTool === 'inspect' ? 'inspector-console' : ''}`}
+          role="region"
+          aria-label="Active Tool Console"
+        >
+          <div
+            className="console-drag-handle"
+            onClick={() => setConsoleMinimized((m) => !m)}
+            title="Tap to toggle controls"
+          />
+
+          <div className="console-header">
+            <div
+              className="console-header-title"
+              onClick={() => setConsoleMinimized((m) => !m)}
+              style={{ cursor: 'pointer' }}
+            >
+              <strong>
+                {activeTool === 'inspect' && '✦ 3D HOTSPOT & ASSET INSPECTOR'}
+                {activeTool === 'light' && '✦ INSPECTION SPOTLIGHT RIG'}
+                {activeTool === 'gimbal' && '✦ 3D FLIGHT GIMBAL TRACKER'}
+                {activeTool === 'lift' && '✦ HYDRAULIC LIFT PLATFORM'}
+                {activeTool === 'scrubber' && '✦ MECHANICAL SCRUBBER LEVER'}
+                {activeTool === 'studio' && '✦ STUDIO LIGHTING & BACKDROP'}
+                {activeTool === 'slicer' && '✦ CROSS-SECTION SLICING PLANE'}
+              </strong>
+              <span>
+                {activeTool === 'inspect' && `${notes.length} HOTSPOT${notes.length === 1 ? '' : 'S'} SAVED · EXPORT / ATTACH`}
+                {activeTool === 'light' && `ORBIT: ${Math.round(lightDial * 360)}° · BRIGHTNESS: ${Math.round(lightBrightness * 100)}% · HEIGHT: ${(0.35 + lightHeight * 3.75).toFixed(1)}m`}
+                {activeTool === 'gimbal' && `AIM: [${(targetAim.x * 100).toFixed(0)}, ${(targetAim.y * 100).toFixed(0)}] · ${isTargetLocked ? 'LOCKED' : 'TRACKING'} · COLOR: ${gimbalBg}`}
+                {activeTool === 'lift' && `HEIGHT: ${(0.08 + liftHeight * 3.4).toFixed(2)}m`}
+                {activeTool === 'scrubber' && `PROGRESS: ${Math.round((model.hasAnimations ? animationProgress : proceduralExplode) * 100)}%`}
+                {activeTool === 'studio' && `PRESET: ${env.label} · COLOR: ${canvasBg}`}
+                {activeTool === 'slicer' && `AXIS: ${sectionAxis.toUpperCase()} · OFFSET: ${sectionOffset.toFixed(2)}`}
+              </span>
+            </div>
+
+            <div className="console-header-actions">
+              <button
+                type="button"
+                className="console-minimize-btn"
+                onClick={() => setConsoleMinimized((m) => !m)}
+                title={consoleMinimized ? 'Expand controls' : 'Collapse controls'}
+                aria-label={consoleMinimized ? 'Expand controls' : 'Collapse controls'}
+              >
+                <IconChevronDown className={consoleMinimized ? 'rotate-180' : ''} />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="console-body"
+            style={{
+              width: '100%',
+              display: consoleMinimized ? 'none' : 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            {/* 3D Inspector: Contextual Hotspot Creator & Persistence / Export Suite */}
+            {activeTool === 'inspect' && (
+              <div className="inspector-console-wrap" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Quick button to expand Tour & Hotspots panel if collapsed */}
+                {tourPanelMinimized && (
+                  <button
+                    type="button"
+                    className="inspector-reopen-panel-btn"
+                    onClick={() => setTourPanelMinimized(false)}
+                    title="Expand Hotspots & Tour panel"
+                  >
+                    <span>✦ Expand Hotspots & Tour Panel</span>
+                    <span style={{ fontSize: 10 }}>({notes.length} stops)</span>
+                  </button>
+                )}
+
+                {/* 1. Hotspot Input Box (Contextual: Appears when user clicks surface to add a hotspot) */}
+                {pendingPoint ? (
+                  <div className="inspector-anchor-box">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ font: '700 10.5px "JetBrains Mono", monospace', color: '#38bdf8' }}>
+                        ✦ ATTACH TO {pendingTarget?.replace(/^[^/]+\//, '').toUpperCase()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingPoint(null);
+                          setPendingTarget(null);
+                          setSelectedPartId(null);
+                          selectRef.current(null);
+                          setDraftLabel('');
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 13 }}
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        className="inspector-text-input"
+                        placeholder="Describe this hotspot…"
+                        value={draftLabel}
+                        onChange={(e) => setDraftLabel(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveHotspot();
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="inspector-primary-btn"
+                        onClick={handleSaveHotspot}
+                        disabled={!draftLabel.trim()}
+                      >
+                        Attach ↗
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="inspector-hint-pill" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedPartId ? (
+                        <>Part: <strong>{selectedPartId.replace(/^[^/]+\//, '')}</strong></>
+                      ) : (
+                        '💡 Click any part on the model to attach a hotspot'
+                      )}
+                    </span>
+                    {selectedPartId && (
+                      <button
+                        type="button"
+                        className="inspector-deselect-btn"
+                        onClick={() => {
+                          setSelectedPartId(null);
+                          selectRef.current(null);
+                          setHighlightedNoteId(null);
+                          setPendingPoint(null);
+                          setPendingWorldBeacon(null);
+                          setPendingTarget(null);
+                        }}
+                        title="Deselect active part"
+                      >
+                        ✕ Deselect
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Background Color Switcher */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: '100%', paddingTop: 6, borderTop: '1px solid rgba(148, 163, 184, 0.15)' }}>
+                  <span style={{ font: '700 9px "JetBrains Mono", monospace', color: '#64748b', letterSpacing: '0.6px' }}>
+                    BACKGROUND COLOR
+                  </span>
+                  <div
+                    className="gimbal-color-line"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      width: '100%',
+                      padding: '2px 0',
+                    }}
+                  >
+                    {FIXED_GIMBAL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`palette-swatch ${canvasBg.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
+                        style={{
+                          backgroundColor: c,
+                          width: 18,
+                          height: 18,
+                          minWidth: 18,
+                          minHeight: 18,
+                          padding: 0,
+                          flexShrink: 0,
+                        }}
+                        onClick={() => {
+                          setCustomStudioBg(c);
+                          setHexInputText(c.replace('#', ''));
+                        }}
+                        aria-label={`Set inspector background ${c}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Storage, Import/Export & Integration matching user screenshot */}
+                <div className="inspector-storage-section">
+                  <div className="inspector-storage-status">
+                    <span className="status-dot green" />
+                    <span>Notes saved on this device</span>
+                  </div>
+
+                  <div className="inspector-storage-actions">
+                    <button
+                      type="button"
+                      className="inspector-action-link"
+                      onClick={() => noteFileInputRef.current?.click()}
+                    >
+                      Import notes ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="inspector-action-link"
+                      onClick={handleExportNotes}
+                    >
+                      Export notes ↓
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="inspector-react-cta"
+                    onClick={handleOpenGuide}
+                  >
+                    <span>Use in your React site</span>
+                    <span>↗</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="inspector-download-glb-btn"
+                    onClick={handleDownloadModel}
+                  >
+                    <span>Download Model (.glb)</span>
+                    <span>⤓</span>
+                  </button>
+
+                  {model.object && (
+                    <button
+                      type="button"
+                      className="inspector-download-glb-btn"
+                      onClick={onDemo}
+                      title="Return to default model"
+                    >
+                      <span>Back to Default Model</span>
+                      <span>↶</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Spotlight Rig Widget: Orbit dial + Brightness lever + Spotlight Height lever */}
+            {activeTool === 'light' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 4px 4px' }}>
+                  <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#94a3b8', letterSpacing: '0.6px' }}>
+                    SPOTLIGHT ORBIT
+                  </span>
+                  <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#38bdf8' }}>
+                    {Math.round(lightDial * 360)}°
+                  </span>
+                </div>
+                <TactileDial
+                  value={lightDial}
+                  onChange={setLightDial}
+                  size={isMobile ? 76 : 88}
+                  label="BEAM ORBIT"
+                  formatValue={(v) => `${Math.round(v * 360)}°`}
+                  showGraduations
+                  fullCircle
+                />
+
+                <div style={{ width: '100%', height: 1, background: 'rgba(255, 255, 255, 0.08)', margin: isMobile ? '8px 0 6px' : '12px 0 8px' }} />
+
+                <div style={{ width: '100%', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#94a3b8', letterSpacing: '0.6px' }}>
+                      BRIGHTNESS (REDUCE / INCREASE)
+                    </span>
+                    <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#38bdf8' }}>
+                      {Math.round(lightBrightness * 100)}%
+                    </span>
+                  </div>
+                  <HorizontalMechanicalLever
+                    value={lightBrightness}
+                    onChange={setLightBrightness}
+                    label="BEAM INTENSITY"
+                    handleLabel="BRIGHT"
+                    tickLabels={['REDUCE', '25%', '50%', '75%', 'INCREASE']}
+                  />
+                </div>
+
+                <div style={{ width: '100%', height: 1, background: 'rgba(255, 255, 255, 0.08)', margin: isMobile ? '6px 0' : '10px 0 8px' }} />
+
+                <div style={{ width: '100%', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#94a3b8', letterSpacing: '0.6px' }}>
+                      SPOTLIGHT HEIGHT (DOWN / UP)
+                    </span>
+                    <span style={{ font: '700 9.5px "JetBrains Mono", monospace', color: '#38bdf8' }}>
+                      {(0.35 + lightHeight * 3.75).toFixed(1)}m
+                    </span>
+                  </div>
+                  <HorizontalMechanicalLever
+                    value={lightHeight}
+                    onChange={setLightHeight}
+                    label="SPOTLIGHT HEIGHT"
+                    handleLabel="HEIGHT"
+                    tickLabels={['DOWN', '25%', 'MID', '75%', 'UP']}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Flight Gimbal Joystick Widget + Fixed Background Color Swatches in a straight line */}
+            {activeTool === 'gimbal' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: isMobile ? 8 : 12 }}>
+                <TactileJoystick
+                  value={targetAim}
+                  onChange={setTargetAim}
+                  size={isMobile ? 96 : 116}
+                  label="FLIGHT GIMBAL"
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: '100%', paddingTop: 6, borderTop: '1px solid rgba(148, 163, 184, 0.15)' }}>
+                  <span style={{ font: '700 9px "JetBrains Mono", monospace', color: '#64748b', letterSpacing: '0.6px' }}>
+                    BACKGROUND COLOR
+                  </span>
+                  <div
+                    className="gimbal-color-line"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      width: '100%',
+                      padding: '2px 0',
+                    }}
+                  >
+                    {FIXED_GIMBAL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`palette-swatch ${gimbalBg.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
+                        style={{
+                          backgroundColor: c,
+                          width: 18,
+                          height: 18,
+                          minWidth: 18,
+                          minHeight: 18,
+                          padding: 0,
+                          flexShrink: 0,
+                        }}
+                        onClick={() => setGimbalBg(c)}
+                        aria-label={`Set gimbal background ${c}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Hydraulic Lift Lever Widget with generous padding top & bottom */}
+            {activeTool === 'lift' && (
+              <div style={{ paddingTop: isMobile ? 8 : 24, paddingBottom: isMobile ? 8 : 24, minHeight: isMobile ? 150 : 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <PullLever
+                  value={liftHeight}
+                  onChange={setLiftHeight}
+                  label="PULL LEVER"
+                  unitLabel="m"
+                />
+              </div>
+            )}
+
+            {/* Mechanical Scrubber Lever Widget */}
+            {activeTool === 'scrubber' && (
+              <div style={{ width: 280, maxWidth: '100%', padding: '4px 0' }}>
+                <HorizontalMechanicalLever
+                  value={model.hasAnimations ? animationProgress : proceduralExplode}
+                  onChange={model.hasAnimations ? setAnimationProgress : setProceduralExplode}
+                  label={model.hasAnimations ? 'ANIMATION PROGRESS' : 'EXPLODE PROGRESS'}
+                />
+              </div>
+            )}
+
+            {/* Studio Lighting & Custom Color Backdrop */}
+            {activeTool === 'studio' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {(Object.keys(ENVIRONMENT_PRESETS) as StudioEnvironmentPreset[]).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`dock-item-btn ${envPreset === key && !customStudioBg ? 'active' : ''}`}
+                      style={{ flex: 1, justifyContent: 'center', padding: '6px 4px', fontSize: '10px' }}
+                      onClick={() => {
+                        setEnvPreset(key);
+                        setCustomStudioBg(null);
+                      }}
+                    >
+                      {ENVIRONMENT_PRESETS[key].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="color-palette-swatches" style={{ justifyContent: 'center' }}>
+                  {['#070b14', '#0f172a', '#1e293b', '#111a2c', '#18181b', '#262626', '#eef2f9', '#f8fafc', '#e2e8f0', '#fed7aa', '#134e4a', '#312e81'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`palette-swatch ${canvasBg.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
+                      style={{ backgroundColor: c }}
+                      onClick={() => {
+                        setCustomStudioBg(c);
+                        setHexInputText(c.replace('#', ''));
+                      }}
+                      aria-label={`Select color ${c}`}
+                    />
+                  ))}
+                </div>
+                <div className="hex-glide-controls">
+                  <div className="hex-glide-input-wrap">
+                    <span className="hex-glide-prefix">#</span>
+                    <input
+                      type="text"
+                      className="hex-glide-text-input"
+                      maxLength={6}
+                      value={hexInputText}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9a-fA-F]/g, '');
+                        setHexInputText(val);
+                        if (val.length === 6 || val.length === 3) {
+                          setCustomStudioBg(`#${val}`);
+                        }
+                      }}
+                      aria-label="Hex color value"
+                    />
+                  </div>
+                  <label className="native-color-picker-button" title="Choose custom color">
+                    <span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: canvasBg }} />
+                    <input
+                      type="color"
+                      value={canvasBg.startsWith('#') && canvasBg.length === 7 ? canvasBg : '#070b14'}
+                      onChange={(e) => {
+                        setCustomStudioBg(e.target.value);
+                        setHexInputText(e.target.value.replace('#', ''));
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="playground-top-btn"
+                    style={{ padding: '4px 8px', fontSize: '10px' }}
+                    onClick={() => setShowGrid((g) => !g)}
+                  >
+                    Grid: {showGrid ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                <div className="studio-snapshot-row">
+                  <button
+                    type="button"
+                    className="studio-snapshot-btn"
+                    onClick={captureStudioSnapshot}
+                    title="Capture full-resolution 3D viewport snapshot"
+                  >
+                    <IconCamera />
+                    <span>Take Studio Snapshot</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Slicing Plane Controls (starts at 1.00, 100% visible, smoothly cuts down) */}
+            {activeTool === 'slicer' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', minWidth: 260 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    { key: 'z', label: 'Z (TOP-DOWN)' },
+                    { key: 'x', label: 'X (SIDE-TO-SIDE)' },
+                    { key: 'y', label: 'Y (FRONT-BACK)' },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`dock-item-btn ${sectionAxis === key ? 'active' : ''}`}
+                      style={{ flex: 1, justifyContent: 'center', padding: '6px 4px', fontSize: '9px' }}
+                      onClick={() => setSectionAxis(key as 'x' | 'y' | 'z')}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    type="range"
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={sectionOffset}
+                    onChange={(e) => setSectionOffset(parseFloat(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  <output style={{ font: '11px monospace', color: 'var(--accent)', minWidth: 36, textAlign: 'right' }}>
+                    {sectionOffset.toFixed(2)}
+                  </output>
+                  <button
+                    type="button"
+                    className="playground-top-btn"
+                    style={{ padding: '2px 8px', fontSize: '10px' }}
+                    onClick={() => setSectionOffset(1.0)}
+                    title="Reset to 1.00 (100% visible)"
+                  >
+                    1.0
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </aside>
+      )}
+
+      {/* ─── Floating 3D Space Dock (Centered at bottom, touch-scrollable on mobile) ─── */}
+      <div className="playground-dock-container">
+        <nav className="playground-floating-dock" aria-label="Playground tools dock">
+          {/* Segment: Inspector (FIRST item in dock before Spotlight) */}
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'inspect' ? 'active' : ''}`}
+            onClick={() => selectTool('inspect')}
+            title="3D Hotspot & Tour Inspector"
+          >
+            <IconInspector />
+            <span>Inspector</span>
+          </button>
+
+          <span className="dock-separator" aria-hidden="true" />
+
+          {/* Segment: Rigs */}
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'light' ? 'active' : ''}`}
+            onClick={() => selectTool('light')}
+            title="Inspection Spotlight Rig"
+          >
+            <IconSpotlight />
+            <span>Spotlight</span>
+          </button>
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'gimbal' ? 'active' : ''}`}
+            onClick={() => selectTool('gimbal')}
+            title="Flight Gimbal Target Lock"
+          >
+            <IconGimbal />
+            <span>Gimbal</span>
+          </button>
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'lift' ? 'active' : ''}`}
+            onClick={() => selectTool('lift')}
+            title="Hydraulic Platform Lift"
+          >
+            <IconLift />
+            <span>Lift</span>
+          </button>
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'scrubber' ? 'active' : ''}`}
+            onClick={() => selectTool('scrubber')}
+            title="Mechanical Scrubber Lever"
+          >
+            <IconScrubber />
+            <span>Scrubber</span>
+          </button>
+
+          <span className="dock-separator" aria-hidden="true" />
+
+          {/* Segment: Studio */}
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'studio' ? 'active' : ''}`}
+            onClick={() => selectTool('studio')}
+            title="Studio Lighting & Custom Backdrop Color"
+          >
+            <IconPalette />
+            <span>Studio</span>
+          </button>
+
+          <span className="dock-separator" aria-hidden="true" />
+
+          {/* Segment: Slicing */}
+          <button
+            type="button"
+            className={`dock-item-btn ${activeTool === 'slicer' ? 'active' : ''}`}
+            onClick={() => selectTool('slicer')}
+            title="Cross-Section Slicing Plane"
+          >
+            <IconSlicer />
+            <span>Slicer</span>
+          </button>
+        </nav>
+      </div>
+
+      {/* ─── Playground Tools Sidebar Drawer (for Mobile & Desktop) ─── */}
+      <div
+        className={`playground-sidebar-backdrop ${sidebarOpen ? 'open' : ''}`}
+        aria-hidden="true"
+        onClick={() => setSidebarOpen(false)}
+      />
+      <aside className={`playground-sidebar ${sidebarOpen ? 'open' : ''}`} aria-label="Tools and Rigs Sidebar">
+        <div className="sidebar-header">
+          <strong><span>✦</span> TOOLS & RIGS</strong>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close tools sidebar"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="sidebar-content">
+          {/* 3D Hotspot & Guided Tour Inspector */}
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Inspection & Hotspots</span>
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'inspect' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('inspect');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconInspector /></div>
+                <div className="sidebar-tool-text">
+                  <strong>3D Inspector</strong>
+                  <span>Hotspots, guided tour & parts</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'inspect' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+          </div>
+
+          {/* Interactive Mechanical Rigs */}
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Interactive Rigs</span>
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'light' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('light');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconSpotlight /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Spotlight Rig</strong>
+                  <span>360° orbit beam & brightness</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'light' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'gimbal' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('gimbal');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconGimbal /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Flight Gimbal</strong>
+                  <span>Dynamic 3D basketball tracking</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'gimbal' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'lift' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('lift');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconLift /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Hydraulic Lift</strong>
+                  <span>Vertical platform pull lever</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'lift' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'scrubber' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('scrubber');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconScrubber /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Time Scrubber</strong>
+                  <span>Exploded assembly timeline</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'scrubber' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+          </div>
+
+          {/* Atmosphere & Studio */}
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Atmosphere & Lighting</span>
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'studio' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('studio');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconPalette /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Studio Mode</strong>
+                  <span>Backdrop colors & hex palette</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'studio' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+          </div>
+
+          {/* Slicing */}
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Slicing & Cross-Section</span>
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'slicer' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('slicer');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconSlicer /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Section Slicer</strong>
+                  <span>Clipping plane with full range</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'slicer' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+          </div>
+
+          {/* Quick Scene Actions */}
+          <div className="sidebar-section">
+            <span className="sidebar-section-title">Scene Tools</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+              <button
+                type="button"
+                className={`playground-top-btn ${turntable ? 'active' : ''}`}
+                style={{ justifyContent: 'center', padding: '8px 10px' }}
+                onClick={() => setTurntable((t) => !t)}
+              >
+                <IconTurntable />
+                <span>360° Spin</span>
+              </button>
+              <button
+                type="button"
+                className="playground-top-btn"
+                style={{ justifyContent: 'center', padding: '8px 10px' }}
+                onClick={captureStudioSnapshot}
+              >
+                <IconCamera />
+                <span>Snapshot</span>
+              </button>
+              <button
+                type="button"
+                className="playground-top-btn"
+                style={{ justifyContent: 'center', padding: '8px 10px' }}
+                onClick={() => controlsRef.current?.reset()}
+              >
+                <IconReset />
+                <span>Reset [R]</span>
+              </button>
+              <button
+                type="button"
+                className="playground-top-btn"
+                style={{ justifyContent: 'center', padding: '8px 10px' }}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                <span>↑ Upload GLB</span>
+              </button>
+              {model.object && (
+                <button
+                  type="button"
+                  className="playground-top-btn"
+                  style={{ justifyContent: 'center', padding: '8px 10px', gridColumn: '1 / -1' }}
+                  onClick={() => {
+                    onDemo();
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <span>↶ Back to Default Model</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── Snapshot Preview Modal (Shows immediately after capturing snapshot) ─── */}
+      {snapshotPreview && (
+        <div
+          className="snapshot-preview-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Viewport Snapshot Preview"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSnapshotPreview(null);
+          }}
+        >
+          <div className="snapshot-preview-card">
+            <div className="snapshot-preview-header">
+              <div className="snapshot-preview-title">
+                <IconCamera />
+                <span>Studio Snapshot Preview</span>
+              </div>
+              <button
+                type="button"
+                className="snapshot-preview-close"
+                onClick={() => setSnapshotPreview(null)}
+                aria-label="Close preview"
+                title="Go back"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="snapshot-preview-image-wrap">
+              <img
+                src={snapshotPreview.url}
+                alt="3D Studio Snapshot"
+                className="snapshot-preview-img"
+              />
+            </div>
+
+            <div className="snapshot-preview-footer">
+              <div className="snapshot-preview-meta">
+                <span className="snapshot-preview-badge">PNG</span>
+                <span className="snapshot-preview-filename">{snapshotPreview.filename}</span>
+              </div>
+              <div className="snapshot-preview-actions">
+                <button
+                  type="button"
+                  className="snapshot-btn-back"
+                  onClick={() => setSnapshotPreview(null)}
+                >
+                  ← Go Back
+                </button>
+                <button
+                  type="button"
+                  className="snapshot-btn-download"
+                  onClick={handleDownloadSnapshot}
+                >
+                  <IconDownload />
+                  <span>Download</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

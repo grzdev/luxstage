@@ -11,6 +11,10 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "spatialkit/react": ["src/spatialkit/index.ts"]
+    },
     "noEmit": true
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
