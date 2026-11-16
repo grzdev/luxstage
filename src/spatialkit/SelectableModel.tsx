@@ -59,6 +59,8 @@ export interface SelectableModelProps {
   onTelemetry?: (stats: ModelTelemetryStats) => void;
   /** Disable CPU triangle raycasting during high-speed 3D Gimbal flight for zero-lag 60fps movement. */
   fastFlight?: boolean;
+  /** Fired once when the model instance has mounted and is ready on stage. */
+  onReady?: () => void;
   /** Active Three.js clipping planes for cross-section rendering. */
   clippingPlanes?: readonly Plane[];
   /** Fires with a point in the selected mesh's local coordinates. */
@@ -91,13 +93,137 @@ export function SelectableModel({ src, modelId = src, configureLoader, ...props 
   return <SelectableObject object={gltf.scene} animations={gltf.animations} modelId={modelId} {...props} />;
 }
 
-// Kick off background fetch & parse of default robot-dog.glb immediately on module load
-if (typeof window !== 'undefined') {
-  try {
-    useLoader.preload(GLTFLoader, '/robot-dog.glb');
-  } catch {
-    // ignore preload errors in test environments
+export interface DefaultStageProgress {
+  percent: number;
+  title: string;
+  subtitle: string;
+}
+
+export interface LoadedDefaultStageAsset {
+  scene: Object3D;
+  animations: AnimationClip[];
+}
+
+const DEFAULT_FALLBACK_BYTES = 3_810_000;
+let defaultStagePromise: Promise<LoadedDefaultStageAsset> | null = null;
+let latestStageProgress: DefaultStageProgress = {
+  percent: 8,
+  title: 'Booting WebGL & 3D Studio',
+  subtitle: 'Initializing shaders, lights & camera controller…',
+};
+const progressListeners = new Set<(p: DefaultStageProgress) => void>();
+
+function emitStageProgress(next: DefaultStageProgress) {
+  latestStageProgress = next;
+  progressListeners.forEach((fn) => fn(next));
+}
+
+export function subscribeDefaultStageProgress(cb: (p: DefaultStageProgress) => void): () => void {
+  progressListeners.add(cb);
+  cb(latestStageProgress);
+  return () => progressListeners.delete(cb);
+}
+
+async function fetchStreamedBinary(url: string, onBytes: (loaded: number, total: number) => void): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url} (${res.status})`);
+  const totalHeader = Number(res.headers.get('content-length') || 0);
+  const total = totalHeader > 0 ? totalHeader : DEFAULT_FALLBACK_BYTES;
+
+  if (!res.body) {
+    const buf = await res.arrayBuffer();
+    onBytes(buf.byteLength, buf.byteLength);
+    return buf;
   }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      loaded += value.byteLength;
+      onBytes(loaded, Math.max(total, loaded));
+    }
+  }
+
+  const merged = new Uint8Array(loaded);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged.buffer;
+}
+
+export function loadDefaultStageModel(): Promise<LoadedDefaultStageAsset> {
+  if (defaultStagePromise) return defaultStagePromise;
+
+  defaultStagePromise = (async () => {
+    const canGunzip = typeof DecompressionStream !== 'undefined';
+    let glbBuffer: ArrayBuffer;
+
+    const handleDownloadProgress = (loaded: number, total: number) => {
+      const ratio = Math.min(1, loaded / Math.max(1, total));
+      const pct = Math.round(12 + ratio * 58);
+      const mbLoaded = (loaded / 1048576).toFixed(1);
+      const mbTotal = (total / 1048576).toFixed(1);
+      emitStageProgress({
+        percent: pct,
+        title: `Streaming Default 3D Model (${mbLoaded} / ${mbTotal} MB)`,
+        subtitle: 'Downloading Aholo Quadruped Robot geometry & PBR textures…',
+      });
+    };
+
+    if (canGunzip) {
+      try {
+        const gzBuffer = await fetchStreamedBinary('/robot-dog.glb.gz', handleDownloadProgress);
+        emitStageProgress({
+          percent: 74,
+          title: 'Decompressing Binary 3D Stream',
+          subtitle: 'Expanding gzipped GLB geometry in hardware stream…',
+        });
+        const ds = new DecompressionStream('gzip');
+        const decompressedStream = new Blob([gzBuffer]).stream().pipeThrough(ds);
+        glbBuffer = await new Response(decompressedStream).arrayBuffer();
+      } catch {
+        glbBuffer = await fetchStreamedBinary('/robot-dog.glb', handleDownloadProgress);
+      }
+    } else {
+      glbBuffer = await fetchStreamedBinary('/robot-dog.glb', handleDownloadProgress);
+    }
+
+    emitStageProgress({
+      percent: 82,
+      title: 'Parsing Mesh & GPU Materials',
+      subtitle: 'Decoding vertices, normals, UVs & PBR metallic maps…',
+    });
+    const loader = new GLTFLoader();
+    const gltf = await loader.parseAsync(glbBuffer, '');
+
+    if (!gltf.scene.userData?._skCompressed) {
+      compressAndOptimizeModelScene(gltf.scene);
+      gltf.scene.userData = { ...gltf.scene.userData, _skCompressed: true };
+    }
+
+    emitStageProgress({
+      percent: 93,
+      title: 'Segmenting 10-Zone Spatial Topology',
+      subtitle: 'Building Part Split index maps & calibrating floor bounds…',
+    });
+
+    return { scene: gltf.scene, animations: gltf.animations };
+  })();
+
+  return defaultStagePromise;
+}
+
+// Start streaming compressed robot-dog.glb.gz as soon as the JS module executes
+if (typeof window !== 'undefined') {
+  loadDefaultStageModel().catch(() => {});
 }
 
 export interface SelectableObjectProps extends Omit<SelectableModelProps, 'src' | 'configureLoader' | 'modelId'> {
@@ -134,6 +260,7 @@ export function SelectableObject({
   materialConfig,
   onTelemetry,
   fastFlight = false,
+  onReady,
   clippingPlanes,
   position,
   rotation,
@@ -147,6 +274,10 @@ export function SelectableObject({
   const { register, select, selectedPart } = useSpatialContext();
   useEffect(() => register(modelId, instance.records), [register, modelId, instance]);
   useEffect(() => () => instance.dispose(), [instance]);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => onReady?.());
+    return () => cancelAnimationFrame(id);
+  }, [instance, onReady]);
 
   // Disable expensive per-pointermove CPU triangle raycasting when in high-mobility Gimbal flight mode
   useEffect(() => {

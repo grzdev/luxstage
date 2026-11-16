@@ -11,11 +11,14 @@ import { AdaptiveDpr, ContactShadows, Html } from '@react-three/drei';
 import { Box3, BufferAttribute, BufferGeometry, Mesh, Plane, Vector3 } from 'three';
 import {
   BlenderControls,
-  SelectableModel,
   SelectableObject,
   SpatialProvider,
+  loadDefaultStageModel,
+  subscribeDefaultStageProgress,
   useSpatial,
+  type DefaultStageProgress,
   type JoystickValue,
+  type LoadedDefaultStageAsset,
   type MaterialOverrideConfig,
   type ModelTelemetryStats,
   type SpatialPart,
@@ -747,6 +750,44 @@ export function Playground({
   // Mobile screen detection for responsive camera framing, layout & initial collapse state
   const [isMobile, setIsMobile] = useState(() => isPhoneViewport());
 
+  // Fast Streamed Default Stage Asset + Blurred Step-by-Step Initial Loader
+  const [defaultStageAsset, setDefaultStageAsset] = useState<LoadedDefaultStageAsset | null>(null);
+  const [stageProgress, setStageProgress] = useState<DefaultStageProgress>({
+    percent: 10,
+    title: 'Booting WebGL & 3D Studio',
+    subtitle: 'Initializing shaders, lights & camera controller…',
+  });
+  const [stageReady, setStageReady] = useState(false);
+  const [stageElapsedSec, setStageElapsedSec] = useState(0);
+
+  useEffect(() => {
+    const unsub = subscribeDefaultStageProgress(setStageProgress);
+    let mounted = true;
+    loadDefaultStageModel()
+      .then((asset) => {
+        if (mounted) setDefaultStageAsset(asset);
+      })
+      .catch((err) => {
+        console.error('Failed to stream default stage model:', err);
+        if (mounted) setStageReady(true);
+      });
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (stageReady || model.object) return;
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setStageElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [stageReady, model.object]);
+
+  const showInitialStageLoader = !stageReady && !model.object && !uploading;
+
   // Active Tool Selection: Defaults to 'material' (Material & Surface Lab)
   const [activeTool, setActiveTool] = useState<string | null>('material');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1394,7 +1435,7 @@ export function Playground({
           <directionalLight position={env.rimPos} intensity={env.rimIntensity ?? 1.5} color={env.rimColor ?? '#ffffff'} />
         )}
 
-        <Suspense fallback={<Html center><div className="scene-message">Preparing Playground…</div></Html>}>
+        <Suspense fallback={null}>
           <SpatialProvider>
             <group position={[0, mobileModelYOffset, 0]}>
               <InteractiveModelRig
@@ -1418,16 +1459,18 @@ export function Playground({
                       materialConfig={materialConfig}
                       onTelemetry={setTelemetry}
                       fastFlight={activeTool === 'gimbal'}
+                      onReady={() => setStageReady(true)}
                       clippingPlanes={clippingPlanes}
                       modelId={model.id}
                       fit={MODEL_FIT}
                       onSurfaceClick={handleSurfaceClick}
                     />
                   </group>
-                ) : (
+                ) : defaultStageAsset ? (
                   <group scale={activeTool === 'gimbal' ? 0.52 : activeTool === 'spatial' ? scaleMultiplier : 1}>
-                    <SelectableModel
-                      src="/robot-dog.glb"
+                    <SelectableObject
+                      object={defaultStageAsset.scene}
+                      animations={defaultStageAsset.animations}
                       modelId="robot-dog"
                       fit={MODEL_FIT}
                       animationProgress={animationProgress}
@@ -1436,11 +1479,12 @@ export function Playground({
                       materialConfig={materialConfig}
                       onTelemetry={setTelemetry}
                       fastFlight={activeTool === 'gimbal'}
+                      onReady={() => setStageReady(true)}
                       clippingPlanes={clippingPlanes}
                       onSurfaceClick={handleSurfaceClick}
                     />
                   </group>
-                )}
+                ) : null}
 
                 {/* 3D Holographic CAD Dimension Cage (W × H × D) inside the rig */}
                 {activeTool === 'spatial' && showDimensionCage && (
@@ -1468,7 +1512,7 @@ export function Playground({
             scale={14}
             blur={2.4}
             far={5}
-            resolution={256}
+            resolution={128}
             frames={1}
           />
         </Suspense>
@@ -2535,6 +2579,115 @@ export function Playground({
                   <IconDownload />
                   <span>Download</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Initial Stage Loading Screen (Blurred Background Matching Live Site + Step-by-Step Progress) ─── */}
+      {showInitialStageLoader && (
+        <div
+          className="lux-stage-loader-backdrop"
+          role="status"
+          aria-live="polite"
+          aria-label="Preparing 3D Stage"
+        >
+          <div className="lux-modal lux-stage-loader-card">
+            <div className="lux-modal-header">
+              <div className="lux-modal-title-wrap">
+                <div className="lux-modal-icon-badge">✦</div>
+                <div>
+                  <div className="lux-modal-title">
+                    Staging 3D Workspace
+                    <span className="lux-badge-pill">LuxStage</span>
+                  </div>
+                  <div className="lux-modal-subtitle">
+                    Preparing interactive playground &amp; Aholo 3D robot asset
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="lux-generation-stage">
+              <div className="lux-gen-hero">
+                <div className="lux-gen-orb-wrap" aria-hidden="true">
+                  <div className="lux-gen-orb-ring" />
+                  <div className="lux-gen-orb-core">✦</div>
+                </div>
+                <div className="lux-gen-meta">
+                  <div className="lux-gen-status-row">
+                    <span className="lux-gen-status-title">{stageProgress.title}</span>
+                    <span className="lux-gen-timer">
+                      {String(Math.floor(stageElapsedSec / 60)).padStart(2, '0')}:
+                      {String(stageElapsedSec % 60).padStart(2, '0')} ·{' '}
+                      <strong>{stageProgress.percent}%</strong>
+                    </span>
+                  </div>
+                  <div className="lux-progress-track">
+                    <div
+                      className="lux-progress-fill"
+                      style={{ width: `${Math.max(8, stageProgress.percent)}%` }}
+                    />
+                  </div>
+                  <div className="lux-gen-prompt-pill">{stageProgress.subtitle}</div>
+                </div>
+              </div>
+
+              <div className="lux-pipeline-list">
+                {[
+                  {
+                    id: 'boot',
+                    title: 'Booting WebGL & 3D Studio Engine',
+                    subtitle: 'Setting up lighting rigs, studio grid & orbit controls',
+                    threshold: 0,
+                    next: 14,
+                  },
+                  {
+                    id: 'stream',
+                    title: 'Streaming Default 3D Asset',
+                    subtitle: 'Loading Quadruped Robot mesh & PBR maps (compressed)',
+                    threshold: 14,
+                    next: 74,
+                  },
+                  {
+                    id: 'segment',
+                    title: 'Segmenting 10-Zone Spatial Parts',
+                    subtitle: 'Indexing 3D zones for Material Lab, Part Split & Slicer',
+                    threshold: 74,
+                    next: 92,
+                  },
+                  {
+                    id: 'mount',
+                    title: 'Centering & Compiling Shaders',
+                    subtitle: 'Framing model cleanly in front of camera',
+                    threshold: 92,
+                    next: 100,
+                  },
+                ].map((step, index) => {
+                  const isDone = stageProgress.percent >= step.next;
+                  const isCurrent =
+                    stageProgress.percent >= step.threshold && stageProgress.percent < step.next;
+                  return (
+                    <div
+                      key={step.id}
+                      className={`lux-pipeline-step ${
+                        isDone ? 'done' : isCurrent ? 'active' : 'pending'
+                      }`}
+                    >
+                      <div className="lux-pipeline-indicator">
+                        {isDone ? '✓' : isCurrent ? '✦' : index + 1}
+                      </div>
+                      <div className="lux-pipeline-text">
+                        <strong>{step.title}</strong>
+                        <span>{step.subtitle}</span>
+                      </div>
+                      <span className="lux-pipeline-badge">
+                        {isDone ? 'Ready' : isCurrent ? 'Loading' : 'Waiting'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

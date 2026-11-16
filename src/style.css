@@ -5293,8 +5293,8 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   border: 1px solid var(--border-2);
   border-radius: 20px;
   width: 100%;
-  max-width: 600px;
-  max-height: 92vh;
+  max-width: 650px;
+  max-height: 94vh;
   overflow: hidden;
   box-shadow:
     0 28px 75px rgba(0, 0, 0, 0.45),
@@ -5311,7 +5311,7 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 }
 .lux-modal-header {
   flex-shrink: 0;
-  padding: 18px 24px 14px;
+  padding: 13px 22px 11px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -5387,7 +5387,7 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 
 /* Segmented Pill Tabs */
 .lux-segmented-bar-wrap {
-  padding: 14px 24px 0;
+  padding: 10px 22px 0;
 }
 .lux-segmented-bar {
   display: grid;
@@ -5442,13 +5442,13 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   }
 }
 .lux-modal-body {
-  padding: 18px 24px 22px;
+  padding: 12px 22px 15px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 .lux-tab-stage {
-  min-height: 410px;
+  min-height: 368px;
   justify-content: space-between;
   animation: luxTabFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -5480,14 +5480,14 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 .lux-prompt-textarea {
   width: 100%;
   box-sizing: border-box;
-  min-height: 72px;
+  min-height: 54px;
   background: var(--bg);
   border: 1.5px solid var(--border-2);
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 11px;
+  padding: 8px 12px;
   font-family: 'DM Sans', sans-serif;
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--ink);
   resize: none;
   outline: none;
@@ -5507,9 +5507,9 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 .lux-visual-preset-card {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  gap: 9px;
+  padding: 8px 11px;
+  border-radius: 11px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   cursor: pointer;
@@ -5533,9 +5533,9 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   box-shadow: 0 0 0 1px var(--accent);
 }
 .lux-preset-card-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--accent);
@@ -5576,19 +5576,19 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 .lux-compact-controls {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 11px;
+  padding: 8px 11px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .lux-style-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 .lux-mini-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
@@ -5600,12 +5600,12 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
 .lux-style-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 .lux-style-pill {
-  padding: 4px 9px;
+  padding: 3.5px 8.5px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--border);
@@ -6713,4 +6713,30 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* ─── Initial Blurred Stage Loading Screen (Matches Live App Theme & Generation Modal) ─── */
+.lux-stage-loader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(7, 11, 20, 0.56);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  animation: luxStageLoaderFadeIn 0.22s ease;
+}
+:root:not([data-theme="dark"]) .lux-stage-loader-backdrop {
+  background: rgba(241, 245, 249, 0.62);
+}
+.lux-stage-loader-card {
+  max-width: 540px !important;
+  transform: none !important;
+}
+@keyframes luxStageLoaderFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

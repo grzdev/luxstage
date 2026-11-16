@@ -63,48 +63,69 @@ function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
   if (!bbox || bbox.isEmpty()) return null;
 
   const minX = bbox.min.x, minY = bbox.min.y, minZ = bbox.min.z;
-  const spanX = Math.max(1e-5, bbox.max.x - minX);
-  const spanY = Math.max(1e-5, bbox.max.y - minY);
-  const spanZ = Math.max(1e-5, bbox.max.z - minZ);
+  const invSpanX = 1 / Math.max(1e-5, bbox.max.x - minX);
+  const invSpanY = 1 / Math.max(1e-5, bbox.max.y - minY);
+  const invSpanZ = 1 / Math.max(1e-5, bbox.max.z - minZ);
 
   const indexAttr = geo.index;
   const triCount = indexAttr ? Math.floor(indexAttr.count / 3) : Math.floor(posAttr.count / 3);
   if (triCount < 12) return null;
 
   const zoneCount = STRUCTURAL_ZONES.length;
-  const buckets: number[][] = Array.from({ length: zoneCount }, () => []);
-  const boxes: Box3[] = Array.from({ length: zoneCount }, () => new Box3());
-  const centroidSums: Vector3[] = Array.from({ length: zoneCount }, () => new Vector3());
+  const zoneU = new Float64Array(zoneCount * 3);
+  for (let z = 0; z < zoneCount; z++) {
+    zoneU[z * 3] = STRUCTURAL_ZONES[z].u[0];
+    zoneU[z * 3 + 1] = STRUCTURAL_ZONES[z].u[1];
+    zoneU[z * 3 + 2] = STRUCTURAL_ZONES[z].u[2];
+  }
+
+  const triZones = new Uint8Array(triCount);
   const triCounts = new Int32Array(zoneCount);
+  const centroidSumsX = new Float64Array(zoneCount);
+  const centroidSumsY = new Float64Array(zoneCount);
+  const centroidSumsZ = new Float64Array(zoneCount);
+  const minBoundsX = new Float64Array(zoneCount).fill(Infinity);
+  const minBoundsY = new Float64Array(zoneCount).fill(Infinity);
+  const minBoundsZ = new Float64Array(zoneCount).fill(Infinity);
+  const maxBoundsX = new Float64Array(zoneCount).fill(-Infinity);
+  const maxBoundsY = new Float64Array(zoneCount).fill(-Infinity);
+  const maxBoundsZ = new Float64Array(zoneCount).fill(-Infinity);
 
-  const v0 = new Vector3();
-  const v1 = new Vector3();
-  const v2 = new Vector3();
+  const posArr = posAttr.array as ArrayLike<number>;
+  const posStride = posAttr.itemSize || 3;
+  const idxArr = indexAttr ? (indexAttr.array as ArrayLike<number>) : null;
+  const oneThird = 1 / 3;
 
+  // Pass 1: Fast zero-allocation typed-array classification & bounds computation
   for (let t = 0; t < triCount; t++) {
-    const i0 = indexAttr ? indexAttr.getX(t * 3) : t * 3;
-    const i1 = indexAttr ? indexAttr.getX(t * 3 + 1) : t * 3 + 1;
-    const i2 = indexAttr ? indexAttr.getX(t * 3 + 2) : t * 3 + 2;
+    const t3 = t * 3;
+    const i0 = idxArr ? idxArr[t3] : t3;
+    const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+    const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
 
-    v0.fromBufferAttribute(posAttr, i0);
-    v1.fromBufferAttribute(posAttr, i1);
-    v2.fromBufferAttribute(posAttr, i2);
+    const p0 = i0 * posStride;
+    const p1 = i1 * posStride;
+    const p2 = i2 * posStride;
 
-    const cx = (v0.x + v1.x + v2.x) / 3;
-    const cy = (v0.y + v1.y + v2.y) / 3;
-    const cz = (v0.z + v1.z + v2.z) / 3;
+    const x0 = posArr[p0], y0 = posArr[p0 + 1], z0 = posArr[p0 + 2];
+    const x1 = posArr[p1], y1 = posArr[p1 + 1], z1 = posArr[p1 + 2];
+    const x2 = posArr[p2], y2 = posArr[p2 + 1], z2 = posArr[p2 + 2];
 
-    const nx = (cx - minX) / spanX;
-    const ny = (cy - minY) / spanY;
-    const nz = (cz - minZ) / spanZ;
+    const cx = (x0 + x1 + x2) * oneThird;
+    const cy = (y0 + y1 + y2) * oneThird;
+    const cz = (z0 + z1 + z2) * oneThird;
+
+    const nx = (cx - minX) * invSpanX;
+    const ny = (cy - minY) * invSpanY;
+    const nz = (cz - minZ) * invSpanZ;
 
     let bestZone = 0;
     let bestDistSq = Infinity;
     for (let z = 0; z < zoneCount; z++) {
-      const [ux, uy, uz] = STRUCTURAL_ZONES[z].u;
-      const dx = nx - ux;
-      const dy = ny - uy;
-      const dz = nz - uz;
+      const zu = z * 3;
+      const dx = nx - zoneU[zu];
+      const dy = ny - zoneU[zu + 1];
+      const dz = nz - zoneU[zu + 2];
       const dSq = dx * dx + dy * dy + dz * dz;
       if (dSq < bestDistSq) {
         bestDistSq = dSq;
@@ -112,35 +133,73 @@ function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
       }
     }
 
-    buckets[bestZone].push(i0, i1, i2);
-    boxes[bestZone].expandByPoint(v0).expandByPoint(v1).expandByPoint(v2);
-    centroidSums[bestZone].x += cx;
-    centroidSums[bestZone].y += cy;
-    centroidSums[bestZone].z += cz;
+    triZones[t] = bestZone;
     triCounts[bestZone]++;
+    centroidSumsX[bestZone] += cx;
+    centroidSumsY[bestZone] += cy;
+    centroidSumsZ[bestZone] += cz;
+
+    const tMinX = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
+    const tMinY = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
+    const tMinZ = z0 < z1 ? (z0 < z2 ? z0 : z2) : (z1 < z2 ? z1 : z2);
+    const tMaxX = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
+    const tMaxY = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
+    const tMaxZ = z0 > z1 ? (z0 > z2 ? z0 : z2) : (z1 > z2 ? z1 : z2);
+
+    if (tMinX < minBoundsX[bestZone]) minBoundsX[bestZone] = tMinX;
+    if (tMinY < minBoundsY[bestZone]) minBoundsY[bestZone] = tMinY;
+    if (tMinZ < minBoundsZ[bestZone]) minBoundsZ[bestZone] = tMinZ;
+    if (tMaxX > maxBoundsX[bestZone]) maxBoundsX[bestZone] = tMaxX;
+    if (tMaxY > maxBoundsY[bestZone]) maxBoundsY[bestZone] = tMaxY;
+    if (tMaxZ > maxBoundsZ[bestZone]) maxBoundsZ[bestZone] = tMaxZ;
   }
 
+  // Pass 2: Preallocate exact-size typed index arrays & fill sequentially
   const useUint32 = posAttr.count > 65535;
-  const parts: CachedSubPart[] = [];
+  const typedBuckets: Array<Uint16Array | Uint32Array | null> = new Array(zoneCount).fill(null);
+  const writePos = new Int32Array(zoneCount);
 
   for (let z = 0; z < zoneCount; z++) {
-    const indices = buckets[z];
-    if (indices.length === 0) continue;
+    const c = triCounts[z];
+    if (c > 0) {
+      typedBuckets[z] = useUint32 ? new Uint32Array(c * 3) : new Uint16Array(c * 3);
+    }
+  }
+
+  for (let t = 0; t < triCount; t++) {
+    const z = triZones[t];
+    const buf = typedBuckets[z];
+    if (!buf) continue;
+    const t3 = t * 3;
+    const wp = writePos[z];
+    buf[wp] = idxArr ? idxArr[t3] : t3;
+    buf[wp + 1] = idxArr ? idxArr[t3 + 1] : t3 + 1;
+    buf[wp + 2] = idxArr ? idxArr[t3 + 2] : t3 + 2;
+    writePos[z] = wp + 3;
+  }
+
+  const parts: CachedSubPart[] = [];
+  for (let z = 0; z < zoneCount; z++) {
+    const typedIndices = typedBuckets[z];
+    const count = triCounts[z];
+    if (!typedIndices || count === 0) continue;
 
     const subGeo = new BufferGeometry();
     for (const attrName of Object.keys(geo.attributes)) {
       subGeo.setAttribute(attrName, geo.attributes[attrName]);
     }
-    const typedIndices = useUint32 ? new Uint32Array(indices) : new Uint16Array(indices);
     subGeo.setIndex(new BufferAttribute(typedIndices, 1));
-    subGeo.boundingBox = boxes[z].clone();
-    subGeo.boundingSphere = boxes[z].getBoundingSphere(new Sphere());
+    const zoneBox = new Box3(
+      new Vector3(minBoundsX[z], minBoundsY[z], minBoundsZ[z]),
+      new Vector3(maxBoundsX[z], maxBoundsY[z], maxBoundsZ[z])
+    );
+    subGeo.boundingBox = zoneBox;
+    subGeo.boundingSphere = zoneBox.getBoundingSphere(new Sphere());
 
-    const count = triCounts[z];
     const localCenter = new Vector3(
-      centroidSums[z].x / count,
-      centroidSums[z].y / count,
-      centroidSums[z].z / count
+      centroidSumsX[z] / count,
+      centroidSumsY[z] / count,
+      centroidSumsZ[z] / count
     );
 
     parts.push({

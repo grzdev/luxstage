@@ -390,7 +390,7 @@ export function GenerationStudio({
                       }}
                       placeholder="Describe an object, furniture piece, workspace setup, wearable, or robot…"
                       className="lux-prompt-textarea"
-                      rows={3}
+                      rows={2}
                     />
                   </div>
 

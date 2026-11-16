@@ -64,7 +64,6 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/aholo/, ''),
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq) => {
-              // Aholo OpenAPI uses raw API key in Authorization header (no "Bearer " prefix)
               // Prefer custom user key (X-Aholo-Key or Authorization), fallback to server .env.local key
               const customKeyHeader = proxyReq.getHeader('x-aholo-key') || proxyReq.getHeader('authorization');
               if (typeof customKeyHeader === 'string' && customKeyHeader.trim()) {
@@ -80,7 +79,16 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom'],
+            'three-vendor': ['three'],
+            'r3f-vendor': ['@react-three/fiber', '@react-three/drei'],
+          },
+        },
+      },
     },
   };
 });

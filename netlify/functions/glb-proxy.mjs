@@ -1,7 +1,7 @@
 /**
- * Netlify Serverless Function: /api/glb-proxy?url=...
+ * Netlify Serverless Proxy: /.netlify/functions/glb-proxy (mapped from /api/glb-proxy?url=...)
  * Streams generated .glb 3D assets from Aholo's CDN with CORS headers enabled
- * so Three.js / WebGL can load textures and geometry in the browser.
+ * so Three.js / WebGL can load textures and geometry cleanly in the browser.
  */
 export default async (req) => {
   if (req.method === 'OPTIONS') {

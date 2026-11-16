@@ -6,14 +6,14 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# 1. Proxy Aholo Lux3D API calls through Netlify Function (injects server API key & handles CORS)
+# 1. Proxy Aholo Lux3D API calls through Netlify Function preserving full subpath (:splat)
 [[redirects]]
   from = "/api/aholo/*"
-  to = "/.netlify/functions/aholo"
+  to = "/.netlify/functions/aholo/:splat"
   status = 200
   force = true
 
-# 2. Proxy generated GLB model binary downloads through Netlify Function (prevents WebGL CORS blocks)
+# 2. Proxy generated GLB model binary downloads through Netlify Function
 [[redirects]]
   from = "/api/glb-proxy"
   to = "/.netlify/functions/glb-proxy"
