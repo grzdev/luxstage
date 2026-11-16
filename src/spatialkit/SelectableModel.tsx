@@ -91,6 +91,15 @@ export function SelectableModel({ src, modelId = src, configureLoader, ...props 
   return <SelectableObject object={gltf.scene} animations={gltf.animations} modelId={modelId} {...props} />;
 }
 
+// Kick off background fetch & parse of default robot-dog.glb immediately on module load
+if (typeof window !== 'undefined') {
+  try {
+    useLoader.preload(GLTFLoader, '/robot-dog.glb');
+  } catch {
+    // ignore preload errors in test environments
+  }
+}
+
 export interface SelectableObjectProps extends Omit<SelectableModelProps, 'src' | 'configureLoader' | 'modelId'> {
   object: Object3D;
   modelId: string;
