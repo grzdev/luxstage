@@ -47,18 +47,17 @@ const VISUAL_PRESETS: VisualPreset[] = [
     ),
   },
   {
-    id: 'macbook-hello',
-    title: 'MacBook Pro',
-    shortName: 'MacBook Pro',
-    category: 'Workspace · Laptop',
+    id: 'rangefinder-camera',
+    title: 'Retro Rangefinder Camera',
+    shortName: 'Rangefinder Camera',
+    category: 'Photography · Design',
     style: 'photorealistic',
     prompt:
-      'Single open modern unibody MacBook Pro laptop in sleek silver aluminum, thin display bezel with top center camera notch showing the colorful gradient cursive hello welcome screen, dark backlit keyboard, and glass trackpad',
+      'Classic retro rangefinder film camera with brushed silver anodized aluminum top plate, textured black leather body, chunky multi-ring glass telephoto lens, and knurled metallic shutter dials',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 5h16a1 1 0 0 1 1 1v10H3V6a1 1 0 0 1 1-1Z" />
-        <path d="M10 5h4v1.5h-4z" />
-        <path d="M2 17h20l-1.2 2H3.2L2 17Z" />
+        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" />
+        <circle cx="12" cy="13" r="3.5" />
       </svg>
     ),
   },
