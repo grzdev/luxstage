@@ -1,4 +1,4 @@
-import { Box3, Mesh, Vector3, type Material, type Object3D } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3, type Material, type Object3D } from 'three';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 
 export interface SpatialPart {
@@ -18,16 +18,196 @@ export function modelFit(object: Object3D, size: number) {
   object.updateWorldMatrix(true, true);
   const box = new Box3().setFromObject(object);
   const dimensions = box.getSize(new Vector3());
-  const largest = Math.max(dimensions.x, dimensions.y, dimensions.z);
+  // Weight vertical height (Y) by 1.35x so tall models (like the quadruped robot dog) fit comfortably
+  // inside the vertical camera frustum while wide models (shoes, couches, workdesks) stay full-width.
+  const largest = Math.max(dimensions.x, dimensions.y * 1.35, dimensions.z);
   if (box.isEmpty() || !Number.isFinite(largest) || largest <= 0) throw new Error('This model has no visible mesh bounds.');
   const center = box.getCenter(new Vector3());
   const scale = size / largest;
   return { scale, position: [-center.x * scale, -box.min.y * scale, -center.z * scale] as [number, number, number] };
 }
 
+interface CachedSubPart {
+  name: string;
+  geometry: BufferGeometry;
+  localCenter: Vector3;
+}
+
+const STRUCTURAL_ZONES: ReadonlyArray<{ name: string; u: [number, number, number] }> = [
+  { name: 'Apex_Crown_Module', u: [0.5, 0.88, 0.5] },
+  { name: 'Forward_Prow_Assembly', u: [0.5, 0.58, 0.86] },
+  { name: 'Aft_ Stern_Assembly', u: [0.5, 0.58, 0.14] },
+  { name: 'Port_Flank_Shell', u: [0.14, 0.56, 0.5] },
+  { name: 'Starboard_Flank_Shell', u: [0.86, 0.56, 0.5] },
+  { name: 'Central_Core_Chassis', u: [0.5, 0.52, 0.5] },
+  { name: 'Front_Port_Strut', u: [0.24, 0.18, 0.78] },
+  { name: 'Front_Starboard_Strut', u: [0.76, 0.18, 0.78] },
+  { name: 'Rear_Port_Strut', u: [0.24, 0.18, 0.22] },
+  { name: 'Rear_Starboard_Strut', u: [0.76, 0.18, 0.22] },
+];
+
+/**
+ * Partition a single-mesh AI model into 10 seamless spatial sub-meshes sharing the original
+ * vertex/normal/UV buffers so that 0% explode has zero visible seams while >0% explode
+ * radially separates the model into interactive 3D structural sub-parts.
+ */
+function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
+  if (geo.userData?._skSegmentedParts) {
+    return geo.userData._skSegmentedParts as CachedSubPart[];
+  }
+  const posAttr = geo.attributes.position;
+  if (!posAttr || posAttr.count < 36) return null;
+
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  const bbox = geo.boundingBox;
+  if (!bbox || bbox.isEmpty()) return null;
+
+  const minX = bbox.min.x, minY = bbox.min.y, minZ = bbox.min.z;
+  const spanX = Math.max(1e-5, bbox.max.x - minX);
+  const spanY = Math.max(1e-5, bbox.max.y - minY);
+  const spanZ = Math.max(1e-5, bbox.max.z - minZ);
+
+  const indexAttr = geo.index;
+  const triCount = indexAttr ? Math.floor(indexAttr.count / 3) : Math.floor(posAttr.count / 3);
+  if (triCount < 12) return null;
+
+  const zoneCount = STRUCTURAL_ZONES.length;
+  const buckets: number[][] = Array.from({ length: zoneCount }, () => []);
+  const boxes: Box3[] = Array.from({ length: zoneCount }, () => new Box3());
+  const centroidSums: Vector3[] = Array.from({ length: zoneCount }, () => new Vector3());
+  const triCounts = new Int32Array(zoneCount);
+
+  const v0 = new Vector3();
+  const v1 = new Vector3();
+  const v2 = new Vector3();
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = indexAttr ? indexAttr.getX(t * 3) : t * 3;
+    const i1 = indexAttr ? indexAttr.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = indexAttr ? indexAttr.getX(t * 3 + 2) : t * 3 + 2;
+
+    v0.fromBufferAttribute(posAttr, i0);
+    v1.fromBufferAttribute(posAttr, i1);
+    v2.fromBufferAttribute(posAttr, i2);
+
+    const cx = (v0.x + v1.x + v2.x) / 3;
+    const cy = (v0.y + v1.y + v2.y) / 3;
+    const cz = (v0.z + v1.z + v2.z) / 3;
+
+    const nx = (cx - minX) / spanX;
+    const ny = (cy - minY) / spanY;
+    const nz = (cz - minZ) / spanZ;
+
+    let bestZone = 0;
+    let bestDistSq = Infinity;
+    for (let z = 0; z < zoneCount; z++) {
+      const [ux, uy, uz] = STRUCTURAL_ZONES[z].u;
+      const dx = nx - ux;
+      const dy = ny - uy;
+      const dz = nz - uz;
+      const dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        bestZone = z;
+      }
+    }
+
+    buckets[bestZone].push(i0, i1, i2);
+    boxes[bestZone].expandByPoint(v0).expandByPoint(v1).expandByPoint(v2);
+    centroidSums[bestZone].x += cx;
+    centroidSums[bestZone].y += cy;
+    centroidSums[bestZone].z += cz;
+    triCounts[bestZone]++;
+  }
+
+  const useUint32 = posAttr.count > 65535;
+  const parts: CachedSubPart[] = [];
+
+  for (let z = 0; z < zoneCount; z++) {
+    const indices = buckets[z];
+    if (indices.length === 0) continue;
+
+    const subGeo = new BufferGeometry();
+    for (const attrName of Object.keys(geo.attributes)) {
+      subGeo.setAttribute(attrName, geo.attributes[attrName]);
+    }
+    const typedIndices = useUint32 ? new Uint32Array(indices) : new Uint16Array(indices);
+    subGeo.setIndex(new BufferAttribute(typedIndices, 1));
+    subGeo.boundingBox = boxes[z].clone();
+    subGeo.boundingSphere = boxes[z].getBoundingSphere(new Sphere());
+
+    const count = triCounts[z];
+    const localCenter = new Vector3(
+      centroidSums[z].x / count,
+      centroidSums[z].y / count,
+      centroidSums[z].z / count
+    );
+
+    parts.push({
+      name: STRUCTURAL_ZONES[z].name.replace(/\s+/g, ''),
+      geometry: subGeo,
+      localCenter,
+    });
+  }
+
+  if (parts.length <= 1) return null;
+  geo.userData = geo.userData || {};
+  geo.userData._skSegmentedParts = parts;
+  return parts;
+}
+
 /** Clone transforms and materials; retain shared, loader-owned geometries/textures. */
 export function createModelInstance(source: Object3D, modelId: string) {
-  const root = clone(source);
+  let root = clone(source);
+
+  // If the model contains only a single Mesh (typical for AI-generated GLBs),
+  // automatically segment it into structural sub-meshes sharing the original vertex buffers.
+  const allMeshes: Mesh[] = [];
+  root.traverse((n) => {
+    if (n instanceof Mesh) allMeshes.push(n);
+  });
+
+  if (allMeshes.length === 1) {
+    const singleMesh = allMeshes[0];
+    const segmented = getOrBuildSegmentedParts(singleMesh.geometry);
+    if (segmented && segmented.length > 1) {
+      const container = new Group();
+      container.name = singleMesh.name || 'SegmentedAssembly';
+      container.position.copy(singleMesh.position);
+      container.rotation.copy(singleMesh.rotation);
+      container.scale.copy(singleMesh.scale);
+      container.userData = { ...singleMesh.userData };
+
+      for (const part of segmented) {
+        const subMesh = new Mesh(part.geometry, singleMesh.material);
+        subMesh.name = part.name;
+        subMesh.castShadow = singleMesh.castShadow;
+        subMesh.receiveShadow = singleMesh.receiveShadow;
+        subMesh.userData = {
+          ...singleMesh.userData,
+          label: part.name.replace(/_/g, ' '),
+          _skLocalCenter: part.localCenter.clone(),
+          _skSyntheticSplit: true,
+        };
+        container.add(subMesh);
+      }
+
+      if (singleMesh.parent) {
+        const parent = singleMesh.parent;
+        const idx = parent.children.indexOf(singleMesh);
+        if (idx !== -1) {
+          parent.children[idx] = container;
+          container.parent = parent;
+        } else {
+          parent.remove(singleMesh);
+          parent.add(container);
+        }
+      } else if (root === singleMesh) {
+        root = container;
+      }
+    }
+  }
+
   const records: PartRecord[] = [];
   const materials: Material[] = [];
   const names = new Map<string, number>();

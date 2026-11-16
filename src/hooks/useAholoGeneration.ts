@@ -1,10 +1,16 @@
 import { useState, useCallback } from 'react';
-import type { StagedModel, Lux3DTaskStatusResponse } from '../types/aholo';
+import type {
+  StagedModel,
+  Lux3DStyle,
+  Lux3DVersion,
+  Lux3DTaskDetail,
+} from '../types/aholo';
 import {
   createLux3DTask,
   pollLux3DTask,
   SHOWCASE_PRESETS,
-  getStoredApiKey,
+  loadSavedGeneratedModels,
+  saveGeneratedModelToStorage,
 } from '../services/aholo';
 
 export type GenerationPhase =
@@ -15,6 +21,19 @@ export type GenerationPhase =
   | 'ready'
   | 'error';
 
+export interface GenerateOptions {
+  prompt?: string;
+  image?: string;
+  style?: Lux3DStyle;
+  version?: Lux3DVersion;
+  faceCount?: number;
+  onMountModel?: (
+    url: string,
+    name: string,
+    onProgress: (percent: number, stage: string) => void
+  ) => Promise<void>;
+}
+
 export interface UseAholoGenerationReturn {
   phase: GenerationPhase;
   statusText: string;
@@ -22,9 +41,8 @@ export interface UseAholoGenerationReturn {
   error: string | null;
   activeModel: StagedModel;
   recentModels: StagedModel[];
-  generateFromAsset: (options: { prompt?: string; image?: string; faceCount?: number }) => Promise<StagedModel>;
+  generateFromAsset: (options: GenerateOptions) => Promise<StagedModel>;
   selectModel: (model: StagedModel) => void;
-  loadLocalGlbFile: (file: File) => Promise<StagedModel>;
   clearError: () => void;
 }
 
@@ -34,8 +52,14 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeModel, setActiveModel] = useState<StagedModel>(SHOWCASE_PRESETS[0]);
-  const [recentModels, setRecentModels] = useState<StagedModel[]>(SHOWCASE_PRESETS);
+  const [recentModels, setRecentModels] = useState<StagedModel[]>(() => {
+    const saved = loadSavedGeneratedModels();
+    const savedIds = new Set(saved.map((m) => m.id));
+    return [...saved, ...SHOWCASE_PRESETS.filter((p) => !savedIds.has(p.id))];
+  });
+  const [activeModel, setActiveModel] = useState<StagedModel>(() => {
+    return SHOWCASE_PRESETS[0];
+  });
 
   const clearError = useCallback(() => {
     setError(null);
@@ -49,95 +73,81 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
     setStatusText(`Loaded ${model.name}`);
   }, []);
 
-  const loadLocalGlbFile = useCallback(async (file: File): Promise<StagedModel> => {
-    setPhase('dispatching');
-    setStatusText(`Loading ${file.name}...`);
-    try {
-      const blobUrl = URL.createObjectURL(file);
-      const newModel: StagedModel = {
-        id: `local-${Date.now()}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        source: 'upload',
-        url: blobUrl,
-        createdAt: Date.now(),
-      };
-      setActiveModel(newModel);
-      setRecentModels((prev) => [newModel, ...prev.filter((m) => m.id !== newModel.id)]);
-      setPhase('ready');
-      setStatusText(`Loaded local model: ${newModel.name}`);
-      return newModel;
-    } catch (err: any) {
-      const msg = err.message || 'Failed to load local GLB file';
-      setError(msg);
-      setPhase('error');
-      throw err;
-    }
-  }, []);
-
   const generateFromAsset = useCallback(
-    async (options: { prompt?: string; image?: string; faceCount?: number }): Promise<StagedModel> => {
+    async (options: GenerateOptions): Promise<StagedModel> => {
       setError(null);
       setPhase('dispatching');
-      setStatusText('Connecting to Aholo Lux3D generative engine...');
-      setProgressPercent(10);
+      setStatusText('Connecting to Aholo Lux3D studio engine…');
+      setProgressPercent(8);
 
       try {
-        // Step 1: Create Generation Task
-        const taskRes = await createLux3DTask({
-          version: 'G1-Turbo',
-          face_count: options.faceCount || 150000,
-          image_1: options.image,
+        // Step 1: Create Generation Task via real Aholo Lux3D API
+        const taskId = await createLux3DTask({
           prompt: options.prompt,
+          image: options.image,
+          style: options.style || 'photorealistic',
+          version: options.version || 'G1-Turbo',
+          faceCount: options.faceCount || 150000,
+          enablePbr: true,
         });
 
-        const taskId = taskRes.task_id;
         setPhase('processing');
-        setStatusText(`Aholo Task Created (#${taskId.slice(-6)}). Synthesizing 3D geometry...`);
-        setProgressPercent(25);
+        setStatusText('Sculpting 3D geometry & surface topology…');
+        setProgressPercent(20);
 
-        // Step 2: Poll Task Status
-        let stepCount = 0;
-        const result = await pollLux3DTask(taskId, (progressData: Lux3DTaskStatusResponse) => {
-          stepCount++;
-          const dynamicProgress = Math.min(25 + stepCount * 8, 90);
+        // Step 2: Poll Task Status until status === 3 (LUX3D_STATUS_SUCCESS)
+        const { glbUrl } = await pollLux3DTask(taskId, (detail: Lux3DTaskDetail, attempt: number) => {
+          const dynamicProgress = Math.min(20 + attempt * 5, 82);
           setProgressPercent(dynamicProgress);
 
-          if (progressData.status === 'processing') {
-            if (dynamicProgress > 60) {
-              setStatusText('Generating PBR surface materials & textures...');
+          if (detail.status === 0) {
+            setStatusText('Initializing generation stage in cloud…');
+          } else if (detail.status === 1) {
+            if (dynamicProgress >= 55) {
+              setStatusText('Baking PBR materials, lighting & surface textures…');
             } else {
-              setStatusText('Refining mesh topology and normal maps...');
+              setStatusText('Sculpting 3D geometry & surface topology…');
             }
           }
         });
 
-        // Step 3: Handle Completed Task
+        // Step 3: Download & Mount Completed GLB into LuxStage BEFORE leaving busy state
         setPhase('downloading');
-        setStatusText('Mounting generated 3D mesh into LuxStage darkroom...');
-        setProgressPercent(98);
+        setStatusText('Preparing & mounting 3D model into LuxStage…');
+        setProgressPercent(88);
 
         const newModel: StagedModel = {
           id: `aholo-${taskId}`,
           name: options.prompt
-            ? options.prompt.slice(0, 32) + (options.prompt.length > 32 ? '...' : '')
-            : `Aholo Lux3D #${taskId.slice(-4)}`,
+            ? options.prompt.slice(0, 38) + (options.prompt.length > 38 ? '…' : '')
+            : `Aholo Model #${String(taskId).slice(-5)}`,
           source: 'aholo-lux3d',
-          url: result.glb!,
-          previewUrl: result.preview_image,
+          url: glbUrl,
           prompt: options.prompt,
+          style: options.style,
+          taskId,
           createdAt: Date.now(),
         };
 
+        if (options.onMountModel) {
+          await options.onMountModel(glbUrl, newModel.name, (pct, stage) => {
+            const mapped = Math.min(99, Math.round(88 + (pct / 100) * 11));
+            setProgressPercent(mapped);
+            setStatusText(stage || 'Mounting 3D model into stage…');
+          });
+        }
+
+        saveGeneratedModelToStorage(newModel);
         setActiveModel(newModel);
-        setRecentModels((prev) => [newModel, ...prev]);
-        setPhase('ready');
-        setStatusText('Model successfully generated and staged!');
+        setRecentModels((prev) => [newModel, ...prev.filter((m) => m.id !== newModel.id)]);
         setProgressPercent(100);
+        setStatusText('Model staged!');
+        setPhase('ready');
 
         return newModel;
       } catch (err: any) {
         console.error('Aholo generation error:', err);
-        const msg = err.message || 'Generation failed. Check your API key or input parameters.';
+        const msg = err.message || 'Generation failed. Check your API key or prompt.';
         setError(msg);
         setPhase('error');
         setStatusText('Generation failed');
@@ -156,7 +166,6 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
     recentModels,
     generateFromAsset,
     selectModel,
-    loadLocalGlbFile,
     clearError,
   };
 }

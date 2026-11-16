@@ -1,7 +1,14 @@
 export { SpatialProvider, useSpatial } from './SpatialProvider';
 export type { SpatialProviderProps } from './SpatialProvider';
 export { SelectableModel, SelectableObject } from './SelectableModel';
-export type { SelectableModelProps, SelectableObjectProps, SurfaceHit } from './SelectableModel';
+export type {
+  SelectableModelProps,
+  SelectableObjectProps,
+  SurfaceHit,
+  SurfaceFinishMode,
+  MaterialOverrideConfig,
+  ModelTelemetryStats,
+} from './SelectableModel';
 export { Annotation } from './Annotation';
 export type { AnnotationProps } from './Annotation';
 export type { SpatialPart } from './model';

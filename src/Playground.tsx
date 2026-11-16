@@ -8,16 +8,18 @@ import {
 } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { AdaptiveDpr, ContactShadows, Html } from '@react-three/drei';
-import { Box3, Mesh, Plane, Vector3 } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Mesh, Plane, Vector3 } from 'three';
 import {
-  Annotation,
   BlenderControls,
   SelectableModel,
   SelectableObject,
   SpatialProvider,
   useSpatial,
   type JoystickValue,
+  type MaterialOverrideConfig,
+  type ModelTelemetryStats,
   type SpatialPart,
+  type SurfaceFinishMode,
   type SurfaceHit,
 } from 'spatialkit/react';
 import {
@@ -28,10 +30,9 @@ import {
 } from './Workbench';
 import { MAX_MODEL_MB, MODEL_FIT, type ModelAsset, type ModelUploadProgress } from './model-files';
 import { generateComponent, publicFilename } from './integration';
-import { INITIAL_NOTES, parseNotes, notesKey, annotationOffset, loadNotesFromStorage, type Note } from './notes';
+import { type Note } from './notes';
 import {
   HorizontalMechanicalLever,
-  PullLever,
   TactileDial,
   TactileJoystick,
 } from './ControlsLab';
@@ -93,6 +94,139 @@ export function IconDownload() {
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
+  );
+}
+
+export function IconMaterialLab() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  );
+}
+
+export function IconPartSplit() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+export function IconSpatialScale() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+  );
+}
+
+// ─── 3D Holographic CAD Bounding Cage with Live W × H × D Telemetry Badges ──
+function SpatialDimensionCage({
+  dimensions,
+  scaleMultiplier,
+}: {
+  dimensions: [number, number, number];
+  scaleMultiplier: number;
+}) {
+  const W = Math.max(0.25, Number((dimensions[0] * scaleMultiplier).toFixed(2)));
+  const H = Math.max(0.25, Number((dimensions[1] * scaleMultiplier).toFixed(2)));
+  const D = Math.max(0.25, Number((dimensions[2] * scaleMultiplier).toFixed(2)));
+
+  const { boxGeo, cornerGeo } = useMemo(() => {
+    const hx = W / 2;
+    const hy = H;
+    const hz = D / 2;
+
+    // 12 wireframe box edges
+    const edges = new Float32Array([
+      // Bottom rectangle (y = 0)
+      -hx, 0, -hz,  hx, 0, -hz,
+       hx, 0, -hz,  hx, 0,  hz,
+       hx, 0,  hz, -hx, 0,  hz,
+      -hx, 0,  hz, -hx, 0, -hz,
+      // Top rectangle (y = hy)
+      -hx, hy, -hz,  hx, hy, -hz,
+       hx, hy, -hz,  hx, hy,  hz,
+       hx, hy,  hz, -hx, hy,  hz,
+      -hx, hy,  hz, -hx, hy, -hz,
+      // 4 vertical pillars
+      -hx, 0, -hz, -hx, hy, -hz,
+       hx, 0, -hz,  hx, hy, -hz,
+       hx, 0,  hz,  hx, hy,  hz,
+      -hx, 0,  hz, -hx, hy,  hz,
+    ]);
+    const bGeo = new BufferGeometry();
+    bGeo.setAttribute('position', new BufferAttribute(edges, 3));
+
+    // 8 emphasized corner L-brackets
+    const cLen = Math.min(W, H, D) * 0.16;
+    const corners: number[] = [];
+    const xs = [-hx, hx];
+    const ys = [0, hy];
+    const zs = [-hz, hz];
+    for (const x of xs) {
+      const sx = x < 0 ? 1 : -1;
+      for (const y of ys) {
+        const sy = y === 0 ? 1 : -1;
+        for (const z of zs) {
+          const sz = z < 0 ? 1 : -1;
+          corners.push(x, y, z, x + sx * cLen, y, z);
+          corners.push(x, y, z, x, y + sy * cLen, z);
+          corners.push(x, y, z, x, y, z + sz * cLen);
+        }
+      }
+    }
+    const cGeo = new BufferGeometry();
+    cGeo.setAttribute('position', new BufferAttribute(new Float32Array(corners), 3));
+
+    return { boxGeo: bGeo, cornerGeo: cGeo };
+  }, [W, H, D]);
+
+  useEffect(() => {
+    return () => {
+      boxGeo.dispose();
+      cornerGeo.dispose();
+    };
+  }, [boxGeo, cornerGeo]);
+
+  return (
+    <group>
+      <lineSegments geometry={boxGeo}>
+        <lineBasicMaterial color="#38bdf8" transparent opacity={0.34} />
+      </lineSegments>
+      <lineSegments geometry={cornerGeo}>
+        <lineBasicMaterial color="#2dd4bf" transparent opacity={0.95} />
+      </lineSegments>
+
+      {/* Width (X) Badge on Front Bottom Edge */}
+      <Html position={[0, 0.04, D / 2 + 0.14]} center distanceFactor={8}>
+        <div className="lux-3d-dim-badge">
+          <span>W</span> <strong>{W.toFixed(2)}m</strong>
+        </div>
+      </Html>
+
+      {/* Height (Y) Badge on Right Vertical Pillar */}
+      <Html position={[W / 2 + 0.14, H * 0.5, D / 2]} center distanceFactor={8}>
+        <div className="lux-3d-dim-badge accent">
+          <span>H</span> <strong>{H.toFixed(2)}m</strong>
+        </div>
+      </Html>
+
+      {/* Depth (Z) Badge on Left Side Edge */}
+      <Html position={[-W / 2 - 0.14, 0.04, 0]} center distanceFactor={8}>
+        <div className="lux-3d-dim-badge">
+          <span>D</span> <strong>{D.toFixed(2)}m</strong>
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -254,19 +388,21 @@ export function IconChevronDown({ className = '' }: { className?: string }) {
 // ─── Responsive Camera Framing: Centers Model by Default on Desktop, Laptop & Mobile ──
 export function ResponsiveCameraFraming({
   controlsRef,
-  basePosition = [3.55, 2.05, 3.70],
-  target = [0, 1.02, 0],
+  basePosition = [4.05, 2.25, 4.25],
+  target = [0, 1.0, 0],
+  modelKey = '',
 }: {
   controlsRef?: React.RefObject<ComponentRef<typeof BlenderControls> | null>;
   basePosition?: [number, number, number];
   target?: [number, number, number];
+  modelKey?: string;
 }) {
   const { camera, size } = useThree();
   const prevKeyRef = useRef<string>('');
 
   useEffect(() => {
     const aspect = size.width / Math.max(1, size.height);
-    const key = `${Math.round(size.width)}x${Math.round(size.height)}-${basePosition.join(',')}-${target.join(',')}`;
+    const key = `${modelKey}-${Math.round(size.width)}x${Math.round(size.height)}-${basePosition.join(',')}-${target.join(',')}`;
     if (key === prevKeyRef.current) return;
     prevKeyRef.current = key;
 
@@ -296,6 +432,11 @@ export function ResponsiveCameraFraming({
 
     const newPos = vTarget.clone().add(vOffset.multiplyScalar(factor));
 
+    const perspCam = camera as unknown as { fov?: number; updateProjectionMatrix: () => void };
+    if (perspCam.fov && perspCam.fov !== 40) {
+      perspCam.fov = 40;
+    }
+    camera.up.set(0, 1, 0);
     camera.position.copy(newPos);
     camera.lookAt(vTarget);
     camera.updateProjectionMatrix();
@@ -306,7 +447,7 @@ export function ResponsiveCameraFraming({
       const ctrl = controlsRef.current as unknown as { saveState?: () => void };
       ctrl.saveState?.();
     }
-  }, [size.width, size.height, camera, controlsRef, basePosition, target]);
+  }, [size.width, size.height, camera, controlsRef, basePosition, target, modelKey]);
 
   return null;
 }
@@ -598,200 +739,103 @@ export function Playground({
   const controlsRef = useRef<ComponentRef<typeof BlenderControls>>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const noteFileInputRef = useRef<HTMLInputElement>(null);
+  void propNotes;
+  void onNotesChange;
+  void onOpenGuide;
 
   // Mobile screen detection for responsive camera framing, layout & initial collapse state
   const [isMobile, setIsMobile] = useState(() => isPhoneViewport());
 
-  // Active Tool Selection & Responsive Sidebar: Default to 'inspect'!
-  const [activeTool, setActiveTool] = useState<string | null>('inspect');
+  // Active Tool Selection: Defaults to 'material' (Material & Surface Lab)
+  const [activeTool, setActiveTool] = useState<string | null>('material');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Control rigs & panels: start OPENED (false) on desktop/laptop screens (> 640px), collapsed ONLY on mobile phones (<= 640px)
+  // Right-side controls panel starts OPEN (false) by default on desktops & laptops, and minimized only on phones
   const [consoleMinimized, setConsoleMinimized] = useState(() => isPhoneViewport());
 
   useEffect(() => {
     const handleResize = () => {
-      const mobile = isPhoneViewport();
-      setIsMobile((prev) => {
-        if (prev !== mobile) {
-          setConsoleMinimized(mobile);
-        }
-        return mobile;
-      });
+      const phone = isPhoneViewport();
+      setIsMobile(phone);
+      if (!phone) {
+        setConsoleMinimized(false);
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ─── 3D Inspector, Hotspot & Guided Tour State ──────────────────────────────
-  const storageKey = notesKey(model.id);
-  const [internalNotes, setInternalNotes] = useState<Note[]>(() => {
-    if (propNotes !== undefined) {
-      return propNotes.filter((n) => n.id !== 'starter-note' && !/inspect.*seal/i.test(n.label));
-    }
-    return loadNotesFromStorage(model.id);
+  // ─── 1. Aholo Material & Surface Lab State ('material') ──────────────────────
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceFinishMode>('pbr');
+  const [surfaceRoughness, setSurfaceRoughness] = useState(0.42);
+  const [surfaceMetalness, setSurfaceMetalness] = useState(0.28);
+  const [wireframeOverlay, setWireframeOverlay] = useState(false);
+
+  const materialConfig = useMemo<MaterialOverrideConfig>(
+    () => ({
+      mode: surfaceMode,
+      roughness: surfaceRoughness,
+      metalness: surfaceMetalness,
+      wireframeOverlay,
+    }),
+    [surfaceMode, surfaceRoughness, surfaceMetalness, wireframeOverlay]
+  );
+
+  // ─── 2. Spatial Scale, Telemetry & Zero-G Physics State ('spatial') ─────────
+  const [scaleMultiplier, setScaleMultiplier] = useState(1.0);
+  const [showDimensionCage, setShowDimensionCage] = useState(true);
+  const [zeroGEnabled, setZeroGEnabled] = useState(false);
+  const [manualAltitude, setManualAltitude] = useState(0.0);
+  const [dropTestTrigger, setDropTestTrigger] = useState(0);
+  const [telemetry, setTelemetry] = useState<ModelTelemetryStats>({
+    triangles: 48200,
+    vertices: 24100,
+    parts: 10,
+    dimensions: [1.85, 2.48, 2.35],
   });
 
-  const rawNotes = propNotes ?? internalNotes;
-  const notes = rawNotes.filter((n) => n.id !== 'starter-note' && !/inspect.*seal/i.test(n.label));
-  const setNotes = (updater: Note[] | ((prev: Note[]) => Note[])) => {
-    setInternalNotes((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {}
-      onNotesChange?.(next);
-      return next;
-    });
-  };
-
+  // ─── 3. AI Part Split & Radial 3D Explode State ('explode') ─────────────────
+  const [proceduralExplode, setProceduralExplode] = useState(0);
+  const [showExplodeVectors, setShowExplodeVectors] = useState(true);
+  const [autoExplodePulse, setAutoExplodePulse] = useState(false);
   const [parts, setParts] = useState<SpatialPart[]>([]);
   const selectRef = useRef<(target: string | null) => void>(() => {});
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
-  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
-  const [pendingPoint, setPendingPoint] = useState<[number, number, number] | null>(null);
-  const [pendingWorldBeacon, setPendingWorldBeacon] = useState<[number, number, number] | null>(null);
-  const [pendingTarget, setPendingTarget] = useState<string | null>(null);
-  const [draftLabel, setDraftLabel] = useState('');
-  const [showAssembly, setShowAssembly] = useState(false);
-  const [assemblyFilter, setAssemblyFilter] = useState('');
-  const [tourPanelOpen, setTourPanelOpen] = useState(true);
-  // Hotspots panel: start OPENED (false) on desktop/laptop screens (> 640px), collapsed ONLY on mobile phones (<= 640px)
-  // Hotspots panel: collapsed on startup for ALL screens (opens smoothly when user clicks any mesh part)
-  const [tourPanelMinimized, setTourPanelMinimized] = useState(true);
-  const [showPlacementHint, setShowPlacementHint] = useState(true);
-
-  // Auto-dismiss placement hint banner after 10 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => setShowPlacementHint(false), 10000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Reset model-specific selection & hotspot draft when switching models without changing activeTool
-  useEffect(() => {
-    setSelectedPartId(null);
-    setHighlightedNoteId(null);
-    setPendingPoint(null);
-    setPendingWorldBeacon(null);
-    setPendingTarget(null);
-    setDraftLabel('');
-    setTourActive(false);
-    setTourPanelMinimized(true);
-    setFocusRequest(null);
-    if (propNotes === undefined) {
-      setInternalNotes(loadNotesFromStorage(model.id));
-    }
-  }, [model.id]);
-
-  const isMobileElevationTool = isMobile && activeTool && activeTool !== 'inspect' && activeTool !== 'lift';
-  const mobileModelYOffset = isMobileElevationTool ? 1.25 : 0;
-
-  // Guided Feature Tour State
-  const [tourActive, setTourActive] = useState(false);
-  const [tourIndex, setTourIndex] = useState(0);
-  const [tourPaused, setTourPaused] = useState(false);
   const [focusRequest, setFocusRequest] = useState<CameraFocusRequest | null>(null);
 
   function triggerCameraFocus(partId: string, point?: [number, number, number]) {
     setFocusRequest({ partId, point, nonce: Date.now() + Math.random() });
   }
 
-  const tourStops = useMemo(() => {
-    if (notes.length === 0) return [];
-    return notes.map((note) => {
-      const part = parts.find((p) => p.id === note.target || p.name === note.target);
-      return {
-        id: note.id,
-        partId: part?.id ?? note.target,
-        partTitle: part ? String(part.metadata?.label ?? part.name) : note.target.replace(/^[^/]+\//, ''),
-        caption: note.label,
-        point: note.point,
-      };
-    });
-  }, [notes, parts]);
-
-  // Stop tour if notes drop below 2
+  // Smooth Auto-Pulse Explode breathing animation loop when toggled ON
   useEffect(() => {
-    if (tourActive && tourStops.length < 2) {
-      setTourActive(false);
-    }
-  }, [tourActive, tourStops.length]);
-
-  // Tour step focus
-  useEffect(() => {
-    if (!tourActive || !tourStops.length) return;
-    const safeIndex = tourIndex % tourStops.length;
-    const stop = tourStops[safeIndex];
-    if (stop) {
-      selectRef.current(stop.partId);
-      setSelectedPartId(stop.partId);
-      setHighlightedNoteId(stop.id);
-      triggerCameraFocus(stop.partId, stop.point);
-    }
-  }, [tourActive, tourIndex, tourStops]);
-
-  // Tour timer (3.2 seconds brisk rhythm per stop)
-  useEffect(() => {
-    if (!tourActive || tourPaused || tourStops.length <= 1) return;
-    const timer = setInterval(() => {
-      setTourIndex((prev) => (prev + 1) % tourStops.length);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, [tourActive, tourPaused, tourStops.length]);
-
-  function handleSaveHotspot() {
-    if (!draftLabel.trim() || !pendingTarget) return;
-    const newNote: Note = {
-      id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      target: pendingTarget,
-      label: draftLabel.trim(),
-      point: pendingPoint ? [pendingPoint[0], pendingPoint[1], pendingPoint[2]] : undefined,
+    if (!autoExplodePulse) return;
+    let rafId = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - start) / 1000;
+      const val = 0.36 + Math.sin(elapsed * 2.1) * 0.32;
+      setProceduralExplode(Number(Math.max(0.02, Math.min(0.95, val)).toFixed(3)));
+      rafId = requestAnimationFrame(tick);
     };
-    setNotes((prev) => [...prev, newNote]);
-    setDraftLabel('');
-    setPendingPoint(null);
-    setPendingWorldBeacon(null);
-    setPendingTarget(null);
-    setShowPlacementHint(false);
-  }
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [autoExplodePulse]);
 
-  function handleDeleteNote(noteId: string) {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId));
-  }
+  // Reset model-specific selection & physics when switching models
+  useEffect(() => {
+    setSelectedPartId(null);
+    setFocusRequest(null);
+    setAutoExplodePulse(false);
+    setProceduralExplode(0);
+    setSurfaceMode('pbr');
+    setWireframeOverlay(false);
+    setScaleMultiplier(1.0);
+    setZeroGEnabled(false);
+    setManualAltitude(0);
+  }, [model.id]);
 
-  function handleExportNotes() {
-    const jsonStr = JSON.stringify(notes, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${publicFilename(model.name)}-notes.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  async function handleImportNotes(file: File) {
-    try {
-      const text = await file.text();
-      const imported = parseNotes(text, model.id);
-      if (!imported.length) return;
-      setNotes((existing) => {
-        const existingIds = new Set(existing.map((n) => n.id));
-        const merged = [...existing];
-        for (const note of imported) {
-          if (!existingIds.has(note.id)) {
-            merged.push(note);
-            existingIds.add(note.id);
-          }
-        }
-        return merged;
-      });
-      setSnapshotToast(`Imported ${imported.length} hotspot${imported.length === 1 ? '' : 's'}`);
-      setTimeout(() => setSnapshotToast(null), 2500);
-    } catch (err) {
-      console.error('Failed to import notes:', err);
-    }
-  }
+  const isMobileElevationTool = isMobile && Boolean(activeTool);
+  const mobileModelYOffset = isMobileElevationTool ? 1.25 : 0;
 
   async function handleDownloadModel() {
     if (onDownloadModel) {
@@ -799,7 +843,7 @@ export function Playground({
       return;
     }
     try {
-      const blob = model.file ?? (await fetch(`/${model.filename || 'pump.glb'}`).then((r) => r.blob()));
+      const blob = model.file ?? (await fetch(`/${model.filename || 'robot-dog.glb'}`).then((r) => r.blob()));
       if (!blob) throw new Error('Download failed');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -812,22 +856,18 @@ export function Playground({
     }
   }
 
-  function handleOpenGuide() {
-    if (onOpenGuide) {
-      onOpenGuide();
-    } else {
-      const snippet = generateComponent(model, notes);
-      navigator.clipboard.writeText(snippet);
-      setSnapshotToast('React component code copied to clipboard!');
-      setTimeout(() => setSnapshotToast(null), 2500);
-    }
+  function handleCopyReactCode() {
+    const snippet = generateComponent(model, []);
+    navigator.clipboard.writeText(snippet);
+    setSnapshotToast('React Three Fiber (<Canvas>) code copied to clipboard!');
+    setTimeout(() => setSnapshotToast(null), 2600);
   }
 
   // Mechanical Rig State
-  // Default lightDial to 1.0 (all the way to the right) so light shines straight at front face of the model!
-  const [lightDial, setLightDial] = useState(1.0);
-  const [lightBrightness, setLightBrightness] = useState(0.55); // Default in the middle!
-  const [lightHeight, setLightHeight] = useState(0.55); // Default spotlight elevation in the middle!
+  // Default lightDial to 0.0 (0° at 12 o'clock) so turning clockwise orbits the spotlight clockwise!
+  const [lightDial, setLightDial] = useState(0.0);
+  const [lightBrightness, setLightBrightness] = useState(0.55);
+  const [lightHeight, setLightHeight] = useState(0.55);
   const [targetAim, setTargetAim] = useState<JoystickValue>({ x: 0, y: 0 });
   const ballPositionRef = useRef(new Vector3(0, 2, 0));
   const [gimbalHUD, setGimbalHUD] = useState({
@@ -841,10 +881,7 @@ export function Playground({
     pitch: 0,
   });
   const [gimbalBg, setGimbalBg] = useState(() => (theme === 'dark' ? '#070b14' : '#eef2f9'));
-
-  const [liftHeight, setLiftHeight] = useState(0.0); // Minimum height rests on 3D grid line!
   const [animationProgress, setAnimationProgress] = useState(0);
-  const [proceduralExplode, setProceduralExplode] = useState(0);
 
   // Studio Lighting & Custom Color Backdrop
   const [envPreset, setEnvPreset] = useState<StudioEnvironmentPreset>('showroom');
@@ -870,30 +907,29 @@ export function Playground({
   const [snapshotPreview, setSnapshotPreview] = useState<{ url: string; filename: string } | null>(null);
 
   // Slicer Cross-Section Tool: Defaults to 1.00 so full model is 100% visible by default!
-  // In CAD & 3D printing, Z is the vertical height axis (Top-to-Bottom slicing plane)
   const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
   const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
   const [sectionOffset, setSectionOffset] = useState(1.0);
 
-  // Tool Selection with immediate single-tap activation (no double-click toggle bugs)
+  // Tool Selection with immediate single-tap activation
   function selectTool(toolName: string) {
     if (activeTool === toolName) {
-      // Tapping active dock item toggles controls collapsed / expanded
       setConsoleMinimized((m) => !m);
       return;
     }
+    if (toolName !== 'explode') {
+      setAutoExplodePulse(false);
+      if (selectedPartId) {
+        setSelectedPartId(null);
+        selectRef.current(null);
+      }
+    }
     setActiveTool(toolName);
-    // Control rigs: on mobile phones start collapsed, on laptop/desktop start OPENED!
     setConsoleMinimized(isPhoneViewport());
     setCrossSectionEnabled(toolName === 'slicer');
-    if (toolName !== 'inspect') {
-      setPendingPoint(null);
-      setPendingTarget(null);
-      setHighlightedNoteId(null);
-      setTourActive(false);
-    } else {
-      // Hotspots panel: starts collapsed on all screens until a mesh part is clicked
-      setTourPanelMinimized(true);
+    if (toolName === 'explode' && proceduralExplode === 0) {
+      // Give an immediate subtle 35% radial part split preview when opening Part Split
+      setProceduralExplode(0.35);
     }
   }
 
@@ -923,20 +959,16 @@ export function Playground({
   const activeModelControl: ActiveModelControl = useMemo(() => {
     if (activeTool === 'light') return 'light';
     if (activeTool === 'gimbal') return 'target';
-    if (activeTool === 'lift') return 'lift';
-    if (activeTool === 'scrubber') return 'scrub';
+    if (activeTool === 'spatial') return 'spatial';
+    if (activeTool === 'explode') return 'scrub';
     return 'none';
   }, [activeTool]);
 
-  // Slicing plane:
-  // In CAD & 3D printing, Z is vertical height (slices top to bottom)
-  // X is width (slices left to right)
-  // Y is depth (slices front to back)
+  // Slicing plane
   const clippingPlanes = useMemo(() => {
     if (activeTool !== 'slicer' || !crossSectionEnabled) return undefined;
     if (sectionAxis === 'z') {
       const normal = new Vector3(0, -1, 0);
-      // Default offset 1.0 shows 100% full unclipped model (including valve handwheel at top)
       const constant = sectionOffset * 2.45 + 2.4;
       return [new Plane(normal, constant)];
     }
@@ -979,6 +1011,80 @@ export function Playground({
     setSnapshotToast('Snapshot downloaded!');
   }
 
+  // Smooth 60fps inertial wheel scrolling inside controls panels (.console-body, .lux-part-chips, .playground-sidebar)
+  useEffect(() => {
+    const root = viewportRef.current;
+    if (!root) return;
+
+    const animMap = new WeakMap<HTMLElement, { target: number; current: number; raf: number }>();
+
+    const onWheel = (e: WheelEvent) => {
+      const targetEl = e.target as HTMLElement | null;
+      if (!targetEl) return;
+
+      const consoleWrap = targetEl.closest('.playground-active-console, .playground-sidebar') as HTMLElement | null;
+      if (!consoleWrap) return;
+
+      // Always prevent wheel inside the controls panels from zooming the 3D canvas behind them
+      e.stopPropagation();
+
+      // Find the nearest scrollable container with overflow room
+      let scrollEl = targetEl.closest('.lux-part-chips, .console-body, .playground-sidebar') as HTMLElement | null;
+      if (scrollEl && scrollEl.classList.contains('lux-part-chips')) {
+        const atTop = scrollEl.scrollTop <= 0 && e.deltaY < 0;
+        const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1 && e.deltaY > 0;
+        if (atTop || atBottom || scrollEl.scrollHeight <= scrollEl.clientHeight) {
+          scrollEl = targetEl.closest('.console-body') as HTMLElement | null;
+        }
+      }
+      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) return;
+
+      // Smooth discrete mouse-wheel ticks; let native high-frequency trackpad gestures pass through naturally
+      const isMouseWheelStep = e.deltaMode === 1 || Math.abs(e.deltaY) >= 40;
+      if (!isMouseWheelStep) return;
+
+      e.preventDefault();
+      const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      const pixelDelta = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY * 0.72;
+
+      let state = animMap.get(scrollEl);
+      if (!state) {
+        state = {
+          target: scrollEl.scrollTop,
+          current: scrollEl.scrollTop,
+          raf: 0,
+        };
+        animMap.set(scrollEl, state);
+      } else if (!state.raf) {
+        state.current = scrollEl.scrollTop;
+        state.target = scrollEl.scrollTop;
+      }
+
+      state.target = Math.max(0, Math.min(maxScroll, state.target + pixelDelta));
+
+      if (!state.raf) {
+        const el = scrollEl;
+        const s = state;
+        const step = () => {
+          const diff = s.target - s.current;
+          if (Math.abs(diff) < 0.5) {
+            el.scrollTop = s.target;
+            s.current = s.target;
+            s.raf = 0;
+            return;
+          }
+          s.current += diff * 0.24;
+          el.scrollTop = s.current;
+          s.raf = requestAnimationFrame(step);
+        };
+        s.raf = requestAnimationFrame(step);
+      }
+    };
+
+    root.addEventListener('wheel', onWheel, { passive: false });
+    return () => root.removeEventListener('wheel', onWheel);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -995,10 +1101,6 @@ export function Playground({
         if (selectedPartId) {
           setSelectedPartId(null);
           selectRef.current(null);
-          setHighlightedNoteId(null);
-          setPendingPoint(null);
-          setPendingWorldBeacon(null);
-          setPendingTarget(null);
           return;
         }
         if (sidebarOpen) {
@@ -1006,9 +1108,6 @@ export function Playground({
           return;
         }
         setActiveTool(null);
-        setPendingPoint(null);
-        setPendingTarget(null);
-        setTourActive(false);
         setCrossSectionEnabled(false);
       }
     };
@@ -1016,54 +1115,14 @@ export function Playground({
     return () => window.removeEventListener('keydown', onKey);
   }, [sidebarOpen, snapshotPreview, selectedPartId]);
 
-  // Surface click for 3D hotspots in inspector mode
   function handleSurfaceClick(hit: SurfaceHit) {
-    if (activeTool === 'inspect') {
-      const partId = hit.part.id;
-
-      // Automatically open the hotspots tab with ease when any part is clicked
-      setTourPanelOpen(true);
-      setTourPanelMinimized(false);
-
-      if (selectedPartId === partId) {
-        // Deselect currently selected part if clicked again
-        setSelectedPartId(null);
-        selectRef.current(null);
-        setHighlightedNoteId(null);
-        setPendingPoint(null);
-        setPendingWorldBeacon(null);
-        setPendingTarget(null);
-        return;
-      }
+    const partId = hit.part.id;
+    if (selectedPartId === partId) {
+      setSelectedPartId(null);
+      selectRef.current(null);
+    } else {
       setSelectedPartId(partId);
       selectRef.current(partId);
-
-      if (isMobile) {
-        // Pure model exploration on mobile: no pending hotspot prompt or beacon
-        setPendingPoint(null);
-        setPendingWorldBeacon(null);
-        setPendingTarget(null);
-        return;
-      }
-
-      // Check if clicked part already has a hotspot
-      const match = notes.find((n) => n.target === partId);
-      if (match) {
-        setHighlightedNoteId(match.id);
-        setPendingPoint(null);
-        setPendingWorldBeacon(null);
-        setPendingTarget(null);
-      } else {
-        // Mesh-local coordinates for Annotation pinning (dead accurate, immune to drift)
-        const localPos = hit.point.slice() as [number, number, number];
-        // World coordinates for temporary 3D beacon cursor
-        const worldPos = (hit.worldPoint ?? hit.point).slice() as [number, number, number];
-        setPendingPoint(localPos);
-        setPendingWorldBeacon(worldPos);
-        setPendingTarget(partId);
-        setHighlightedNoteId(null);
-      }
-      setConsoleMinimized(false);
     }
   }
 
@@ -1084,18 +1143,6 @@ export function Playground({
             if (file) onUpload(file);
           }}
         />
-        <input
-          ref={noteFileInputRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = '';
-            if (file) handleImportNotes(file);
-          }}
-        />
-
         <div className="playground-top-actions">
           {model.object && (
             <button
@@ -1134,10 +1181,6 @@ export function Playground({
           <span className="credit-text" title={model.name}>
             <span>Model:</span> <strong className="credit-name">{model.name}</strong>
           </span>
-        ) : activeTool === 'gimbal' ? (
-          <span className="credit-text">
-            <span>Model from</span> <a href="https://sketchfab.com/ikagogava" target="_blank" rel="noreferrer">Ika Gogava</a>
-          </span>
         ) : (
           <span className="credit-text">
             <span>Powered by</span> <strong className="credit-name">Aholo Lux3D</strong>
@@ -1147,7 +1190,7 @@ export function Playground({
 
       {snapshotToast && (
         <div className="snapshot-toast" role="status">
-          <span>📷</span> {snapshotToast}
+          <span>✦</span> {snapshotToast}
         </div>
       )}
 
@@ -1298,27 +1341,6 @@ export function Playground({
         </div>
       )}
 
-      {/* Hotspot Placement Instruction Banner (Desktop only) */}
-      {activeTool === 'inspect' && !tourActive && !isMobile && showPlacementHint && (
-        <div
-          className="placement-banner"
-          role="status"
-          style={{
-            position: 'absolute',
-            top: 68,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 48,
-            pointerEvents: 'none',
-            margin: 0,
-          }}
-        >
-          {pendingPoint
-            ? '✦ Point targeted on surface · Enter label in console below'
-            : '✦ Click any part or surface of the 3D model to drop a hotspot'}
-        </div>
-      )}
-
       {/* ─── Tactical Gimbal HUD Overlay (Fighter-Jet Camera Turret & Missile Lock) ─── */}
       {activeModelControl === 'target' && (
         <div className="target-hud-overlay" aria-hidden="true">
@@ -1330,7 +1352,6 @@ export function Playground({
             </span>
           </div>
 
-          {/* Real-time tracking bracket framing the moving basketball across 3D space: ORANGE -> GREEN */}
           {gimbalHUD.inFrustum && (
             <div
               className={`hud-target-bracket ${gimbalHUD.isLocked ? 'is-locked' : ''}`}
@@ -1357,8 +1378,8 @@ export function Playground({
                 }}
               >
                 {gimbalHUD.isLocked
-                  ? `● BASKETBALL LOCKED · ${gimbalHUD.distMeters}m [MISSILE LOCK]`
-                  : `○ ACQUIRING BASKETBALL · ${gimbalHUD.distMeters}m (${gimbalHUD.angleDeg.toFixed(1)}° OFF)`}
+                  ? `● TARGET LOCKED · ${gimbalHUD.distMeters}m [MISSILE LOCK]`
+                  : `○ ACQUIRING TARGET · ${gimbalHUD.distMeters}m (${gimbalHUD.angleDeg.toFixed(1)}° OFF)`}
               </span>
               <div className="bracket-corner tl" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
               <div className="bracket-corner tr" style={{ borderColor: gimbalHUD.isLocked ? '#10b981' : '#f59e0b' }} />
@@ -1367,7 +1388,6 @@ export function Playground({
             </div>
           )}
 
-          {/* Optical crosshair fixed to camera bore-sight: elevated on mobile to clear bottom controls */}
           <div
             className="hud-reticle-center"
             style={{
@@ -1422,69 +1442,19 @@ export function Playground({
         </div>
       )}
 
-      {/* ─── Guided Feature Tour Top HUD (Auto-Cycling Callouts) ─── */}
-      {tourActive && tourStops.length > 0 && (
-        <div className="tour-hud-card" role="region" aria-label="Guided Tour">
-          <div className="tour-hud-top">
-            <span className="tour-step-badge">
-              TOUR {String((tourIndex % tourStops.length) + 1).padStart(2, '0')} / {String(tourStops.length).padStart(2, '0')}
-            </span>
-            <strong>{tourStops[tourIndex % tourStops.length]?.partTitle}</strong>
-            <div className="tour-hud-controls">
-              <button
-                type="button"
-                aria-label="Previous tour stop"
-                onClick={() => setTourIndex((i) => (i - 1 + tourStops.length) % tourStops.length)}
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                aria-label={tourPaused ? 'Resume tour' : 'Pause tour'}
-                onClick={() => setTourPaused((p) => !p)}
-              >
-                {tourPaused ? '▶' : '⏸'}
-              </button>
-              <button
-                type="button"
-                aria-label="Next tour stop"
-                onClick={() => setTourIndex((i) => (i + 1) % tourStops.length)}
-              >
-                ›
-              </button>
-              <button
-                type="button"
-                aria-label="Exit guided tour"
-                onClick={() => setTourActive(false)}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <div className="tour-hud-caption">
-            {tourStops[tourIndex % tourStops.length]?.caption}
-          </div>
-        </div>
-      )}
-
       {/* ─── 3D Canvas with Responsive Camera Framing for Mobile & Desktop ─── */}
       <Canvas
         dpr={typeof window !== 'undefined' ? Math.min(1.25, window.devicePixelRatio || 1) : 1}
         performance={{ min: 0.5 }}
-        camera={{ position: [3.55, 2.05, 3.70], fov: 40 }}
+        camera={{ position: [4.05, 2.25, 4.25], fov: 40 }}
         gl={{
           localClippingEnabled: true,
-          // preserveDrawingBuffer removed for 3x hardware page-flipping fillrate
           powerPreference: 'high-performance',
         }}
         onPointerMissed={() => {
           if (selectedPartId) {
             setSelectedPartId(null);
             selectRef.current(null);
-            setHighlightedNoteId(null);
-            setPendingPoint(null);
-            setPendingWorldBeacon(null);
-            setPendingTarget(null);
           }
         }}
       >
@@ -1505,39 +1475,51 @@ export function Playground({
                 lightDial={lightDial}
                 lightBrightness={lightBrightness}
                 lightHeight={lightHeight}
-                liftHeight={liftHeight}
+                zeroGEnabled={activeTool === 'spatial' && zeroGEnabled}
+                manualAltitude={activeTool === 'spatial' ? manualAltitude : 0}
+                dropTestTrigger={dropTestTrigger}
                 ballPositionRef={ballPositionRef}
               >
                 {model.object ? (
-                  <group scale={activeTool === 'gimbal' ? 1.6 / MODEL_FIT : 1}>
+                  <group scale={activeTool === 'gimbal' ? 0.52 : activeTool === 'spatial' ? scaleMultiplier : 1}>
                     <SelectableObject
                       object={model.object}
                       animations={model.animations}
                       animationProgress={model.hasAnimations ? animationProgress : undefined}
-                      explode={proceduralExplode}
+                      explode={activeTool === 'explode' ? proceduralExplode : 0}
+                      showExplodeVectors={activeTool === 'explode' && showExplodeVectors}
+                      materialConfig={materialConfig}
+                      onTelemetry={setTelemetry}
+                      fastFlight={activeTool === 'gimbal'}
                       clippingPlanes={clippingPlanes}
                       modelId={model.id}
                       fit={MODEL_FIT}
                       onSurfaceClick={handleSurfaceClick}
                     />
                   </group>
-                ) : activeTool === 'gimbal' ? (
-                  /* Dynamic Target: Basketball flying across 3D space */
-                  <SelectableModel
-                    src="/models/basketball.glb"
-                    modelId="basketball"
-                    fit={1.6}
-                    onSurfaceClick={handleSurfaceClick}
-                  />
                 ) : (
-                  <SelectableModel
-                    src="/pump.glb"
-                    modelId="pump"
-                    fit={MODEL_FIT}
-                    animationProgress={animationProgress}
-                    explode={proceduralExplode}
-                    clippingPlanes={clippingPlanes}
-                    onSurfaceClick={handleSurfaceClick}
+                  <group scale={activeTool === 'gimbal' ? 0.52 : activeTool === 'spatial' ? scaleMultiplier : 1}>
+                    <SelectableModel
+                      src="/robot-dog.glb"
+                      modelId="robot-dog"
+                      fit={MODEL_FIT}
+                      animationProgress={animationProgress}
+                      explode={activeTool === 'explode' ? proceduralExplode : 0}
+                      showExplodeVectors={activeTool === 'explode' && showExplodeVectors}
+                      materialConfig={materialConfig}
+                      onTelemetry={setTelemetry}
+                      fastFlight={activeTool === 'gimbal'}
+                      clippingPlanes={clippingPlanes}
+                      onSurfaceClick={handleSurfaceClick}
+                    />
+                  </group>
+                )}
+
+                {/* 3D Holographic CAD Dimension Cage (W × H × D) inside the rig */}
+                {activeTool === 'spatial' && showDimensionCage && (
+                  <SpatialDimensionCage
+                    dimensions={telemetry.dimensions}
+                    scaleMultiplier={scaleMultiplier}
                   />
                 )}
               </InteractiveModelRig>
@@ -1547,34 +1529,8 @@ export function Playground({
                 selectRef={selectRef}
                 onSelectedPartChange={(partId) => {
                   setSelectedPartId(partId);
-                  if (!partId) {
-                    setHighlightedNoteId(null);
-                    setPendingPoint(null);
-                    setPendingWorldBeacon(null);
-                    setPendingTarget(null);
-                  }
                 }}
               />
-
-              {/* 3D Hotspot Annotations */}
-              {activeTool === 'inspect' && notes.map((note, i) => (
-                <Annotation
-                  key={note.id}
-                  target={note.target}
-                  label={note.label}
-                  point={note.point}
-                  offset={annotationOffset(notes, i)}
-                  className="model-annotation"
-                />
-              ))}
-
-              {/* Active Locator Beacon when surface point is targeted (Desktop only) */}
-              {activeTool === 'inspect' && !isMobile && pendingWorldBeacon && (
-                <mesh position={pendingWorldBeacon}>
-                  <sphereGeometry args={[0.045, 16, 16]} />
-                  <meshBasicMaterial color="#38bdf8" depthTest={false} />
-                </mesh>
-              )}
             </group>
           </SpatialProvider>
 
@@ -1606,7 +1562,7 @@ export function Playground({
               ? [0, 2.0, 0]
               : isMobileElevationTool
               ? [0, 0.35, 0]
-              : [0, 1.02, 0]
+              : [0, 1.0, 0]
           }
           minDistance={1.8}
           maxDistance={28}
@@ -1617,8 +1573,9 @@ export function Playground({
         {activeTool !== 'gimbal' && (
           <ResponsiveCameraFraming
             controlsRef={controlsRef}
-            basePosition={isMobile ? (isMobileElevationTool ? [5.4, 3.6, 5.6] : [5.4, 3.2, 5.6]) : [3.55, 2.05, 3.70]}
-            target={isMobileElevationTool ? [0, 0.35, 0] : [0, 1.02, 0]}
+            modelKey={model.id}
+            basePosition={isMobile ? (isMobileElevationTool ? [5.4, 3.6, 5.6] : [5.4, 3.2, 5.6]) : [4.05, 2.25, 4.25]}
+            target={isMobileElevationTool ? [0, 0.35, 0] : [0, 1.0, 0]}
           />
         )}
 
@@ -1636,250 +1593,24 @@ export function Playground({
         <ViewportDirector turntable={turntable} focusRequest={focusRequest} controlsRef={controlsRef} />
       </Canvas>
 
-      {/* ─── Left Stack: Hotspots & Tour Panel + Gradient Light-Black Upload Button ─── */}
+      {/* ─── Left Stack: Only the Clean Generate 3D Model Button (Hotspots removed) ─── */}
       <div className="playground-left-stack">
-        {activeTool === 'inspect' && tourPanelOpen && (
-          <aside
-            className={`inspector-tour-panel ${tourPanelMinimized ? 'minimized' : ''}`}
-            role="region"
-            aria-label="Hotspots and Guided Tour"
-          >
-            <div className="console-header">
-              <div
-                className="console-header-title"
-                onClick={() => setTourPanelMinimized((m) => !m)}
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                title={tourPanelMinimized ? 'Click to expand' : 'Click to collapse'}
-              >
-                <strong>✦ HOTSPOTS & TOUR</strong>
-                <span>{notes.length} STOPS · {parts.length} PARTS</span>
-              </div>
-              <div className="console-header-actions">
-                <button
-                  type="button"
-                  className="console-minimize-btn"
-                  onClick={() => setTourPanelMinimized((m) => !m)}
-                  title={tourPanelMinimized ? 'Expand panel' : 'Collapse panel'}
-                  aria-label={tourPanelMinimized ? 'Expand hotspots panel' : 'Collapse hotspots panel'}
-                >
-                  <IconChevronDown className={tourPanelMinimized ? '' : 'rotate-180'} />
-                </button>
-              </div>
-            </div>
-
-            {!tourPanelMinimized && (
-              <div className="tour-panel-body">
-                {/* Prominently highlight the currently clicked / selected part */}
-                {selectedPartId && (
-                  <div className="inspector-active-part-card">
-                    <div className="active-part-info">
-                      <span className="active-part-dot" />
-                      <span className="active-part-label">SELECTED PART:</span>
-                      <strong className="active-part-name" title={selectedPartId.replace(/^[^/]+\//, '')}>
-                        {selectedPartId.replace(/^[^/]+\//, '')}
-                      </strong>
-                    </div>
-                    <button
-                      type="button"
-                      className="active-part-clear-btn"
-                      onClick={() => {
-                        setSelectedPartId(null);
-                        selectRef.current(null);
-                        setHighlightedNoteId(null);
-                        setPendingPoint(null);
-                        setPendingWorldBeacon(null);
-                        setPendingTarget(null);
-                      }}
-                      title="Deselect part"
-                      aria-label="Deselect part"
-                    >
-                      ✕ Deselect
-                    </button>
-                  </div>
-                )}
-
-                {/* Hotspots list with active selection highlight */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
-                  <div className="inspector-section-label">
-                    <span>SAVED HOTSPOTS ({notes.length})</span>
-                  </div>
-
-                  {notes.length > 0 ? (
-                    <div className="inspector-notes-scroll">
-                      {notes.map((note) => {
-                        const isMatch = highlightedNoteId === note.id || selectedPartId === note.target;
-                        return (
-                          <div
-                            key={note.id}
-                            className={`inspector-note-card ${isMatch ? 'active-highlight' : ''}`}
-                            onClick={() => {
-                              if (selectedPartId === note.target) {
-                                setSelectedPartId(null);
-                                setHighlightedNoteId(null);
-                                selectRef.current(null);
-                                setPendingPoint(null);
-                                setPendingWorldBeacon(null);
-                                setPendingTarget(null);
-                              } else {
-                                setSelectedPartId(note.target);
-                                setHighlightedNoteId(note.id);
-                                selectRef.current(note.target);
-                                triggerCameraFocus(note.target, note.point);
-                              }
-                            }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, gap: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span className="note-part-badge">{note.target.replace(/^[^/]+\//, '')}</span>
-                                {isMatch && <span className="note-selected-tag">● ACTIVE</span>}
-                              </div>
-                              <span className="note-label-text">{note.label}</span>
-                            </div>
-                            <button
-                              type="button"
-                              className="inspector-note-delete"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteNote(note.id);
-                                if (highlightedNoteId === note.id) setHighlightedNoteId(null);
-                              }}
-                              title="Delete hotspot"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="inspector-empty-notes">
-                      No hotspots placed yet. Click on the model to place a hotspot.
-                    </div>
-                  )}
-                </div>
-
-                {/* Guided Tour Launcher (with fast 3.2s transition rhythm) */}
-                <div style={{ width: '100%' }}>
-                  {tourStops.length >= 2 ? (
-                    <button
-                      type="button"
-                      className={`inspector-tour-toggle-btn ${tourActive ? 'active' : ''}`}
-                      onClick={() => setTourActive((a) => !a)}
-                    >
-                      <span>{tourActive ? '⏹ Exit Tour' : '▶ Start Guided Feature Tour'}</span>
-                      <span style={{ fontSize: 10, opacity: 0.85 }}>({tourStops.length} stops · 3s pace)</span>
-                    </button>
-                  ) : (
-                    <div className="inspector-tour-locked-banner">
-                      Add {2 - tourStops.length} more hotspot{2 - tourStops.length === 1 ? '' : 's'} to unlock guided tour
-                    </div>
-                  )}
-                </div>
-
-                {/* Closeable Assembly Dropdown with search filter */}
-                <div className="inspector-assembly-section">
-                  <button
-                    type="button"
-                    className={`inspector-assembly-header-btn ${showAssembly ? 'open' : ''}`}
-                    onClick={() => setShowAssembly((s) => !s)}
-                  >
-                    <span>✦ Assembly Tree ({parts.length} parts)</span>
-                    <span className="assembly-toggle-indicator">{showAssembly ? 'Hide ▲' : 'Open ▼'}</span>
-                  </button>
-
-                  {showAssembly && (
-                    <div className="inspector-assembly-list">
-                      <div className="assembly-search-input-wrap">
-                        <input
-                          type="text"
-                          className="assembly-search-mini"
-                          placeholder="Filter parts…"
-                          value={assemblyFilter}
-                          onChange={(e) => setAssemblyFilter(e.target.value)}
-                        />
-                        {assemblyFilter && (
-                          <button
-                            type="button"
-                            className="assembly-search-clear"
-                            onClick={() => setAssemblyFilter('')}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                      <div className="assembly-scroll-container">
-                        {parts
-                          .filter((p) => {
-                            const name = String(p.metadata?.label ?? p.name).toLowerCase();
-                            return !assemblyFilter || name.includes(assemblyFilter.toLowerCase()) || p.id.toLowerCase().includes(assemblyFilter.toLowerCase());
-                          })
-                          .map((part) => {
-                            const isSelected = selectedPartId === part.id;
-                            const hasNote = notes.some((n) => n.target === part.id);
-                            return (
-                              <button
-                                key={part.id}
-                                type="button"
-                                className={`assembly-part-item ${isSelected ? 'selected' : ''}`}
-                                onClick={() => {
-                                  if (selectedPartId === part.id) {
-                                    setSelectedPartId(null);
-                                    selectRef.current(null);
-                                    setHighlightedNoteId(null);
-                                    setPendingPoint(null);
-                                    setPendingWorldBeacon(null);
-                                    setPendingTarget(null);
-                                  } else {
-                                    setSelectedPartId(part.id);
-                                    selectRef.current(part.id);
-                                    triggerCameraFocus(part.id);
-                                    const match = notes.find((n) => n.target === part.id);
-                                    setHighlightedNoteId(match ? match.id : null);
-                                  }
-                                }}
-                              >
-                                <span className="part-mesh-icon">⬡</span>
-                                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {String(part.metadata?.label ?? part.name)}
-                                </span>
-                                {hasNote && <span className="assembly-note-dot" title="Has hotspot">●</span>}
-                              </button>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </aside>
-        )}
-
-        {/* Prominent Gradient Light-Black Upload Button: sits right under Hotspots & Tour in Inspector, or at top-left in other tabs */}
         <button
           type="button"
-          className={`playground-upload-cta ${activeTool === 'inspect' && tourPanelOpen ? 'under-panel' : 'top-left-corner'}`}
-          onClick={onOpenSynthesize || (() => fileInputRef.current?.click())}
+          className="playground-upload-cta top-left-corner"
+          onClick={() => onOpenSynthesize?.()}
           disabled={uploading}
-          title="Synthesize 3D Model with Aholo Lux3D or Upload GLB"
+          title="Generate a 3D model from a prompt using Aholo Lux3D"
         >
-          <span className="upload-cta-main">
-            <span className="upload-cta-icon" aria-hidden="true" style={{ fontSize: 13, color: '#38bdf8' }}>
-              ✦
-            </span>
-            <span className="upload-cta-text">
-              <strong>{uploading ? `Loading ${uploadProgress?.percent ?? 0}%…` : '✦ Synthesize 3D Model'}</strong>
-              <small>AI PROMPT / IMAGE / GLB · LUX3D</small>
-            </span>
-          </span>
-          <span className="upload-cta-badge">✦ Generate</span>
+          <span aria-hidden="true" style={{ fontSize: 14 }}>✦</span>
+          <span>{uploading ? `Loading Model (${uploadProgress?.percent ?? 0}%)…` : 'Generate 3D Model'}</span>
         </button>
       </div>
 
       {/* ─── Floating Tool Console (Docked to Bottom-Right on Desktop, Compact on Mobile) ─── */}
       {activeTool && (
         <aside
-          className={`playground-active-console ${consoleMinimized ? 'minimized' : ''} ${activeTool === 'inspect' ? 'inspector-console' : ''}`}
+          className={`playground-active-console ${consoleMinimized ? 'minimized' : ''} ${activeTool === 'material' || activeTool === 'spatial' || activeTool === 'explode' ? 'inspector-console' : ''}`}
           role="region"
           aria-label="Active Tool Console"
         >
@@ -1896,20 +1627,20 @@ export function Playground({
               style={{ cursor: 'pointer' }}
             >
               <strong>
-                {activeTool === 'inspect' && '✦ 3D HOTSPOT & ASSET INSPECTOR'}
+                {activeTool === 'material' && '✦ AHOLO MATERIAL & SURFACE LAB'}
                 {activeTool === 'light' && '✦ INSPECTION SPOTLIGHT RIG'}
                 {activeTool === 'gimbal' && '✦ 3D FLIGHT GIMBAL TRACKER'}
-                {activeTool === 'lift' && '✦ HYDRAULIC LIFT PLATFORM'}
-                {activeTool === 'scrubber' && '✦ MECHANICAL SCRUBBER LEVER'}
+                {activeTool === 'spatial' && '✦ SPATIAL SCALE & ZERO-G PHYSICS'}
+                {activeTool === 'explode' && '✦ AI PART SPLIT & 3D EXPLODE'}
                 {activeTool === 'studio' && '✦ STUDIO LIGHTING & BACKDROP'}
                 {activeTool === 'slicer' && '✦ CROSS-SECTION SLICING PLANE'}
               </strong>
               <span>
-                {activeTool === 'inspect' && `${notes.length} HOTSPOT${notes.length === 1 ? '' : 'S'} SAVED · EXPORT / ATTACH`}
+                {activeTool === 'material' && `SHADER: ${surfaceMode.toUpperCase()} · ROUGHNESS: ${Math.round(surfaceRoughness * 100)}% · METAL: ${Math.round(surfaceMetalness * 100)}%`}
                 {activeTool === 'light' && `ORBIT: ${Math.round(lightDial * 360)}° · BRIGHTNESS: ${Math.round(lightBrightness * 100)}% · HEIGHT: ${(0.35 + lightHeight * 3.75).toFixed(1)}m`}
                 {activeTool === 'gimbal' && `AIM: [${(targetAim.x * 100).toFixed(0)}, ${(targetAim.y * 100).toFixed(0)}] · ${isTargetLocked ? 'LOCKED' : 'TRACKING'} · COLOR: ${gimbalBg}`}
-                {activeTool === 'lift' && `HEIGHT: ${(0.08 + liftHeight * 3.4).toFixed(2)}m`}
-                {activeTool === 'scrubber' && `PROGRESS: ${Math.round((model.hasAnimations ? animationProgress : proceduralExplode) * 100)}%`}
+                {activeTool === 'spatial' && `${(telemetry.triangles / 1000).toFixed(1)}K TRIS · ${scaleMultiplier.toFixed(2)}X SCALE · ${zeroGEnabled ? 'ZERO-G FLOAT' : 'STAGE FLOOR'}`}
+                {activeTool === 'explode' && `${parts.length || telemetry.parts} AI SUB-PARTS · SPREAD: ${Math.round(proceduralExplode * 100)}%`}
                 {activeTool === 'studio' && `PRESET: ${env.label} · COLOR: ${canvasBg}`}
                 {activeTool === 'slicer' && `AXIS: ${sectionAxis.toUpperCase()} · OFFSET: ${sectionOffset.toFixed(2)}`}
               </span>
@@ -1937,191 +1668,108 @@ export function Playground({
               alignItems: 'center',
             }}
           >
-            {/* 3D Inspector: Contextual Hotspot Creator & Persistence / Export Suite */}
-            {activeTool === 'inspect' && (
-              <div className="inspector-console-wrap" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* Quick button to expand Tour & Hotspots panel if collapsed */}
-                {tourPanelMinimized && (
-                  <button
-                    type="button"
-                    className="inspector-reopen-panel-btn"
-                    onClick={() => setTourPanelMinimized(false)}
-                    title="Expand Hotspots & Tour panel"
-                  >
-                    <span>✦ Expand Hotspots & Tour Panel</span>
-                    <span style={{ fontSize: 10 }}>({notes.length} stops)</span>
-                  </button>
-                )}
-
-                {/* 1. Hotspot Input Box (Contextual: Appears when user clicks surface to add a hotspot) */}
-                {pendingPoint ? (
-                  <div className="inspector-anchor-box">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ font: '700 10.5px "JetBrains Mono", monospace', color: '#38bdf8' }}>
-                        ✦ ATTACH TO {pendingTarget?.replace(/^[^/]+\//, '').toUpperCase()}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPendingPoint(null);
-                          setPendingTarget(null);
-                          setSelectedPartId(null);
-                          selectRef.current(null);
-                          setDraftLabel('');
-                        }}
-                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 13 }}
-                        title="Cancel"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input
-                        type="text"
-                        className="inspector-text-input"
-                        placeholder="Describe this hotspot…"
-                        value={draftLabel}
-                        onChange={(e) => setDraftLabel(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveHotspot();
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        className="inspector-primary-btn"
-                        onClick={handleSaveHotspot}
-                        disabled={!draftLabel.trim()}
-                      >
-                        Attach ↗
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="inspector-hint-pill" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedPartId ? (
-                        <>Part: <strong>{selectedPartId.replace(/^[^/]+\//, '')}</strong></>
-                      ) : (
-                        '💡 Click any part on the model to attach a hotspot'
-                      )}
-                    </span>
-                    {selectedPartId && (
-                      <button
-                        type="button"
-                        className="inspector-deselect-btn"
-                        onClick={() => {
-                          setSelectedPartId(null);
-                          selectRef.current(null);
-                          setHighlightedNoteId(null);
-                          setPendingPoint(null);
-                          setPendingWorldBeacon(null);
-                          setPendingTarget(null);
-                        }}
-                        title="Deselect active part"
-                      >
-                        ✕ Deselect
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Background Color Switcher */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: '100%', paddingTop: 6, borderTop: '1px solid rgba(148, 163, 184, 0.15)' }}>
-                  <span style={{ font: '700 9px "JetBrains Mono", monospace', color: '#64748b', letterSpacing: '0.6px' }}>
-                    BACKGROUND COLOR
-                  </span>
-                  <div
-                    className="gimbal-color-line"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      width: '100%',
-                      padding: '2px 0',
-                    }}
-                  >
-                    {FIXED_GIMBAL_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`palette-swatch ${canvasBg.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
-                        style={{
-                          backgroundColor: c,
-                          width: 18,
-                          height: 18,
-                          minWidth: 18,
-                          minHeight: 18,
-                          padding: 0,
-                          flexShrink: 0,
-                        }}
-                        onClick={() => {
-                          setCustomStudioBg(c);
-                          setHexInputText(c.replace('#', ''));
-                        }}
-                        aria-label={`Set inspector background ${c}`}
-                      />
-                    ))}
-                  </div>
+            {/* ─── 1. Aholo Material & Surface Lab ('material') ─── */}
+            {activeTool === 'material' && (
+              <div className="lux-tool-console-stack">
+                <div className="lux-console-section-header">
+                  <span>SURFACE SHADER PRESET</span>
+                  <span className="lux-console-badge">{surfaceMode.toUpperCase()}</span>
                 </div>
 
-                {/* 2. Storage, Import/Export & Integration matching user screenshot */}
-                <div className="inspector-storage-section">
-                  <div className="inspector-storage-status">
-                    <span className="status-dot green" />
-                    <span>Notes saved on this device</span>
-                  </div>
-
-                  <div className="inspector-storage-actions">
+                <div className="lux-finish-grid">
+                  {([
+                    { id: 'pbr', label: 'Aholo PBR', sub: 'Original AI Textures', swatch: 'linear-gradient(135deg, #38bdf8, #14b8a6)' },
+                    { id: 'wireframe', label: 'Topology X-Ray', sub: 'Cyan Quad/Tri Mesh', swatch: 'linear-gradient(135deg, #0ea5e9, #0284c7)' },
+                    { id: 'clay', label: 'Studio Clay', sub: 'Matte Sculpt Inspection', swatch: 'linear-gradient(135deg, #cbd5e1, #64748b)' },
+                    { id: 'chrome', label: 'Liquid Chrome', sub: 'Mirror Specular Finish', swatch: 'linear-gradient(135deg, #f8fafc, #94a3b8)' },
+                    { id: 'hologram', label: 'Cyber Hologram', sub: 'Emissive Holo Field', swatch: 'linear-gradient(135deg, #2dd4bf, #0284c7)' },
+                    { id: 'glass', label: 'Frosted Acrylic', sub: 'Translucent Shell', swatch: 'linear-gradient(135deg, #e0f2fe, #38bdf8)' },
+                  ] as const).map((item) => (
                     <button
+                      key={item.id}
                       type="button"
-                      className="inspector-action-link"
-                      onClick={() => noteFileInputRef.current?.click()}
+                      className={`lux-finish-btn ${surfaceMode === item.id ? 'active' : ''}`}
+                      onClick={() => setSurfaceMode(item.id)}
                     >
-                      Import notes ↑
+                      <span className="lux-finish-swatch" style={{ background: item.swatch }} />
+                      <span className="lux-finish-meta">
+                        <strong>{item.label}</strong>
+                        <small>{item.sub}</small>
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      className="inspector-action-link"
-                      onClick={handleExportNotes}
-                    >
-                      Export notes ↓
-                    </button>
-                  </div>
+                  ))}
+                </div>
 
+                {/* Wireframe Topology Overlay Toggle */}
+                <div className="lux-toggle-row">
+                  <button
+                    type="button"
+                    className={`lux-pill-toggle ${wireframeOverlay ? 'active' : ''}`}
+                    onClick={() => setWireframeOverlay((w) => !w)}
+                  >
+                    <span>⬡ Topology Wireframe Overlay</span>
+                    <strong>{wireframeOverlay ? 'ON' : 'OFF'}</strong>
+                  </button>
+                </div>
+
+                {/* Live PBR Roughness & Metalness Sliders */}
+                <div className="lux-slider-group">
+                  <div className="lux-slider-header">
+                    <span>SURFACE ROUGHNESS (GLOSS ↔ MATTE)</span>
+                    <strong>{Math.round(surfaceRoughness * 100)}%</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={surfaceRoughness}
+                    onChange={(e) => setSurfaceRoughness(parseFloat(e.target.value))}
+                    className="lux-range-slider"
+                  />
+                </div>
+
+                <div className="lux-slider-group">
+                  <div className="lux-slider-header">
+                    <span>METALLIC SHEEN (DIELECTRIC ↔ METAL)</span>
+                    <strong>{Math.round(surfaceMetalness * 100)}%</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={surfaceMetalness}
+                    onChange={(e) => setSurfaceMetalness(parseFloat(e.target.value))}
+                    className="lux-range-slider"
+                  />
+                </div>
+
+                <div className="lux-console-actions-row">
                   <button
                     type="button"
                     className="inspector-react-cta"
-                    onClick={handleOpenGuide}
+                    onClick={() => onOpenSynthesize?.()}
                   >
-                    <span>Use in your React site</span>
-                    <span>↗</span>
+                    <span>✦ Generate or Remix 3D Asset</span>
                   </button>
-
                   <button
                     type="button"
                     className="inspector-download-glb-btn"
-                    onClick={handleDownloadModel}
+                    onClick={() => {
+                      setSurfaceMode('pbr');
+                      setSurfaceRoughness(0.42);
+                      setSurfaceMetalness(0.28);
+                      setWireframeOverlay(false);
+                    }}
                   >
-                    <span>Download Model (.glb)</span>
-                    <span>⤓</span>
+                    <span>Reset Surface Shaders</span>
+                    <span>↺</span>
                   </button>
-
-                  {model.object && (
-                    <button
-                      type="button"
-                      className="inspector-download-glb-btn"
-                      onClick={onDemo}
-                      title="Return to default model"
-                    >
-                      <span>Back to Default Model</span>
-                      <span>↶</span>
-                    </button>
-                  )}
                 </div>
               </div>
             )}
+
             {/* Spotlight Rig Widget: Orbit dial + Brightness lever + Spotlight Height lever */}
             {activeTool === 'light' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
@@ -2232,26 +1880,232 @@ export function Playground({
               </div>
             )}
 
-            {/* Hydraulic Lift Lever Widget with generous padding top & bottom */}
-            {activeTool === 'lift' && (
-              <div style={{ paddingTop: isMobile ? 8 : 24, paddingBottom: isMobile ? 8 : 24, minHeight: isMobile ? 150 : 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <PullLever
-                  value={liftHeight}
-                  onChange={setLiftHeight}
-                  label="PULL LEVER"
-                  unitLabel="m"
-                />
+            {/* ─── 2. Spatial Scale, Telemetry & Zero-G Physics ('spatial') ─── */}
+            {activeTool === 'spatial' && (
+              <div className="lux-tool-console-stack">
+                <div className="lux-console-section-header">
+                  <span>3D MESH TELEMETRY & BOUNDS</span>
+                  <span className="lux-console-badge">READY FOR ENGINE</span>
+                </div>
+
+                {/* 4-Card Live Mesh Telemetry Grid */}
+                <div className="lux-telemetry-grid">
+                  <div className="lux-telemetry-card">
+                    <span>TRIANGLES</span>
+                    <strong>{telemetry.triangles.toLocaleString()}</strong>
+                  </div>
+                  <div className="lux-telemetry-card">
+                    <span>VERTICES</span>
+                    <strong>{telemetry.vertices.toLocaleString()}</strong>
+                  </div>
+                  <div className="lux-telemetry-card">
+                    <span>SUB-PARTS</span>
+                    <strong>{parts.length || telemetry.parts}</strong>
+                  </div>
+                  <div className="lux-telemetry-card">
+                    <span>FOOTPRINT (M)</span>
+                    <strong>
+                      {(telemetry.dimensions[0] * scaleMultiplier).toFixed(1)}×
+                      {(telemetry.dimensions[1] * scaleMultiplier).toFixed(1)}×
+                      {(telemetry.dimensions[2] * scaleMultiplier).toFixed(1)}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* 3D Dimension Cage Toggle */}
+                <div className="lux-toggle-row">
+                  <button
+                    type="button"
+                    className={`lux-pill-toggle ${showDimensionCage ? 'active' : ''}`}
+                    onClick={() => setShowDimensionCage((c) => !c)}
+                  >
+                    <span>📐 3D Holographic Dimension Cage (W×H×D)</span>
+                    <strong>{showDimensionCage ? 'ON' : 'OFF'}</strong>
+                  </button>
+                </div>
+
+                {/* Real-World Scale Multiplier Slider */}
+                <div className="lux-slider-group">
+                  <div className="lux-slider-header">
+                    <span>REAL-WORLD SCALE MULTIPLIER</span>
+                    <strong>{scaleMultiplier.toFixed(2)}x</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.4}
+                    max={1.8}
+                    step={0.02}
+                    value={scaleMultiplier}
+                    onChange={(e) => setScaleMultiplier(parseFloat(e.target.value))}
+                    className="lux-range-slider"
+                  />
+                </div>
+
+                {/* Zero-G Anti-Gravity & Gravity Drop Test */}
+                <div className="lux-console-section-header" style={{ marginTop: 2 }}>
+                  <span>STAGE GRAVITY & ZERO-G LEVITATION</span>
+                  <span className="lux-console-badge">{zeroGEnabled ? 'ANTI-GRAVITY' : '1.0G FLOOR'}</span>
+                </div>
+
+                <div className="lux-physics-row">
+                  <button
+                    type="button"
+                    className={`lux-physics-btn ${zeroGEnabled ? 'active' : ''}`}
+                    onClick={() => setZeroGEnabled((z) => !z)}
+                  >
+                    <span>🛸 Zero-G Float</span>
+                    <small>{zeroGEnabled ? 'Active' : 'Off'}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="lux-physics-btn drop-test"
+                    onClick={() => {
+                      setZeroGEnabled(false);
+                      setManualAltitude(0);
+                      setDropTestTrigger((n) => n + 1);
+                    }}
+                  >
+                    <span>⚡ Gravity Drop Test</span>
+                    <small>Free-Fall Bounce</small>
+                  </button>
+                </div>
+
+                <div className="lux-slider-group">
+                  <div className="lux-slider-header">
+                    <span>STAGE HOVER ALTITUDE</span>
+                    <strong>{(manualAltitude * 2.2).toFixed(2)}m</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={manualAltitude}
+                    onChange={(e) => setManualAltitude(parseFloat(e.target.value))}
+                    className="lux-range-slider"
+                  />
+                </div>
+
+                <div className="lux-console-actions-row">
+                  <button
+                    type="button"
+                    className="inspector-react-cta"
+                    onClick={handleCopyReactCode}
+                  >
+                    <span>⟨/⟩ Copy React Three Fiber Code</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="inspector-download-glb-btn"
+                    onClick={handleDownloadModel}
+                  >
+                    <span>Download 3D Asset (.glb)</span>
+                    <span>⤓</span>
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Mechanical Scrubber Lever Widget */}
-            {activeTool === 'scrubber' && (
-              <div style={{ width: 280, maxWidth: '100%', padding: '4px 0' }}>
-                <HorizontalMechanicalLever
-                  value={model.hasAnimations ? animationProgress : proceduralExplode}
-                  onChange={model.hasAnimations ? setAnimationProgress : setProceduralExplode}
-                  label={model.hasAnimations ? 'ANIMATION PROGRESS' : 'EXPLODE PROGRESS'}
-                />
+            {/* ─── 3. AI Part Split & Radial 3D Explode ('explode') ─── */}
+            {activeTool === 'explode' && (
+              <div className="lux-tool-console-stack">
+                <div className="lux-console-section-header">
+                  <span>AI SPATIAL MESH SEGMENTATION</span>
+                  <span className="lux-console-badge">{Math.round(proceduralExplode * 100)}% SPREAD</span>
+                </div>
+
+                <div style={{ width: '100%', padding: '2px 0' }}>
+                  <HorizontalMechanicalLever
+                    value={proceduralExplode}
+                    onChange={(v) => {
+                      if (autoExplodePulse) setAutoExplodePulse(false);
+                      setProceduralExplode(v);
+                    }}
+                    label="RADIAL PART EXPLODE"
+                    handleLabel="SPLIT"
+                    tickLabels={['ASSEMBLED', '25%', '50%', '75%', 'EXPLODED']}
+                  />
+                </div>
+
+                <div className="lux-physics-row">
+                  <button
+                    type="button"
+                    className={`lux-physics-btn ${autoExplodePulse ? 'active' : ''}`}
+                    onClick={() => setAutoExplodePulse((p) => !p)}
+                  >
+                    <span>◎ Auto-Pulse Explode</span>
+                    <small>{autoExplodePulse ? 'Breathing' : 'Manual'}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`lux-physics-btn ${showExplodeVectors ? 'active' : ''}`}
+                    onClick={() => setShowExplodeVectors((v) => !v)}
+                  >
+                    <span>⤢ 3D Vector Lines</span>
+                    <small>{showExplodeVectors ? 'Visible' : 'Hidden'}</small>
+                  </button>
+                </div>
+
+                {/* Interactive Segmented Sub-Parts List (Click to isolate & focus camera) */}
+                <div className="lux-console-section-header" style={{ marginTop: 2 }}>
+                  <span>SEGMENTED SUB-PARTS ({parts.length})</span>
+                  {selectedPartId && (
+                    <button
+                      type="button"
+                      className="lux-mini-reset-link"
+                      onClick={() => {
+                        setSelectedPartId(null);
+                        selectRef.current(null);
+                      }}
+                    >
+                      Clear Selection ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="lux-part-chips">
+                  {parts.slice(0, 12).map((part) => {
+                    const isSelected = selectedPartId === part.id;
+                    const cleanLabel = String(part.metadata?.label ?? part.name).replace(/_/g, ' ');
+                    return (
+                      <button
+                        key={part.id}
+                        type="button"
+                        className={`lux-part-chip ${isSelected ? 'active' : ''}`}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedPartId(null);
+                            selectRef.current(null);
+                          } else {
+                            setSelectedPartId(part.id);
+                            selectRef.current(part.id);
+                            triggerCameraFocus(part.id);
+                          }
+                        }}
+                        title={`Inspect ${cleanLabel}`}
+                      >
+                        <span className="lux-part-chip-dot" />
+                        <span className="lux-part-chip-name">{cleanLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="lux-console-actions-row">
+                  <button
+                    type="button"
+                    className="inspector-download-glb-btn"
+                    onClick={() => {
+                      setAutoExplodePulse(false);
+                      setProceduralExplode(0);
+                      setSelectedPartId(null);
+                      selectRef.current(null);
+                    }}
+                  >
+                    <span>Reassemble All Sub-Parts (0%)</span>
+                    <span>↺</span>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -2395,20 +2249,20 @@ export function Playground({
       {/* ─── Floating 3D Space Dock (Centered at bottom, touch-scrollable on mobile) ─── */}
       <div className="playground-dock-container">
         <nav className="playground-floating-dock" aria-label="Playground tools dock">
-          {/* Segment: Inspector (FIRST item in dock before Spotlight) */}
+          {/* Segment 1: Aholo Material & Surface Lab */}
           <button
             type="button"
-            className={`dock-item-btn ${activeTool === 'inspect' ? 'active' : ''}`}
-            onClick={() => selectTool('inspect')}
-            title="3D Hotspot & Tour Inspector"
+            className={`dock-item-btn ${activeTool === 'material' ? 'active' : ''}`}
+            onClick={() => selectTool('material')}
+            title="Aholo Material & Surface Shader Lab"
           >
-            <IconInspector />
-            <span>Inspector</span>
+            <IconMaterialLab />
+            <span>Material Lab</span>
           </button>
 
           <span className="dock-separator" aria-hidden="true" />
 
-          {/* Segment: Rigs */}
+          {/* Segment 2: Interactive 3D Rigs & Aholo Spatial Tools */}
           <button
             type="button"
             className={`dock-item-btn ${activeTool === 'light' ? 'active' : ''}`}
@@ -2429,26 +2283,26 @@ export function Playground({
           </button>
           <button
             type="button"
-            className={`dock-item-btn ${activeTool === 'lift' ? 'active' : ''}`}
-            onClick={() => selectTool('lift')}
-            title="Hydraulic Platform Lift"
+            className={`dock-item-btn ${activeTool === 'spatial' ? 'active' : ''}`}
+            onClick={() => selectTool('spatial')}
+            title="Spatial Scale Cage, Telemetry & Zero-G Drop Physics"
           >
-            <IconLift />
-            <span>Lift</span>
+            <IconSpatialScale />
+            <span>Spatial Rig</span>
           </button>
           <button
             type="button"
-            className={`dock-item-btn ${activeTool === 'scrubber' ? 'active' : ''}`}
-            onClick={() => selectTool('scrubber')}
-            title="Mechanical Scrubber Lever"
+            className={`dock-item-btn ${activeTool === 'explode' ? 'active' : ''}`}
+            onClick={() => selectTool('explode')}
+            title="AI Part Split & Radial 3D Explode"
           >
-            <IconScrubber />
-            <span>Scrubber</span>
+            <IconPartSplit />
+            <span>Part Split</span>
           </button>
 
           <span className="dock-separator" aria-hidden="true" />
 
-          {/* Segment: Studio */}
+          {/* Segment 3: Studio */}
           <button
             type="button"
             className={`dock-item-btn ${activeTool === 'studio' ? 'active' : ''}`}
@@ -2461,7 +2315,7 @@ export function Playground({
 
           <span className="dock-separator" aria-hidden="true" />
 
-          {/* Segment: Slicing */}
+          {/* Segment 4: Slicing */}
           <button
             type="button"
             className={`dock-item-btn ${activeTool === 'slicer' ? 'active' : ''}`}
@@ -2482,7 +2336,7 @@ export function Playground({
       />
       <aside className={`playground-sidebar ${sidebarOpen ? 'open' : ''}`} aria-label="Tools and Rigs Sidebar">
         <div className="sidebar-header">
-          <strong><span>✦</span> TOOLS & RIGS</strong>
+          <strong><span>✦</span> AHOLO 3D TOOLS & RIGS</strong>
           <button
             type="button"
             className="sidebar-close-btn"
@@ -2494,25 +2348,61 @@ export function Playground({
         </div>
 
         <div className="sidebar-content">
-          {/* 3D Hotspot & Guided Tour Inspector */}
+          {/* Aholo Material & Surface Lab */}
           <div className="sidebar-section">
-            <span className="sidebar-section-title">Inspection & Hotspots</span>
+            <span className="sidebar-section-title">Aholo Surface & Topology</span>
             <button
               type="button"
-              className={`sidebar-tool-card ${activeTool === 'inspect' ? 'active' : ''}`}
+              className={`sidebar-tool-card ${activeTool === 'material' ? 'active' : ''}`}
               onClick={() => {
-                selectTool('inspect');
+                selectTool('material');
                 setSidebarOpen(false);
               }}
             >
               <div className="sidebar-tool-main">
-                <div className="sidebar-tool-icon"><IconInspector /></div>
+                <div className="sidebar-tool-icon"><IconMaterialLab /></div>
                 <div className="sidebar-tool-text">
-                  <strong>3D Inspector</strong>
-                  <span>Hotspots, guided tour & parts</span>
+                  <strong>Material & Surface Lab</strong>
+                  <span>PBR, X-Ray wireframe, clay, chrome & hologram</span>
                 </div>
               </div>
-              <span className="sidebar-tool-status">{activeTool === 'inspect' ? 'ACTIVE' : 'SELECT'}</span>
+              <span className="sidebar-tool-status">{activeTool === 'material' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'explode' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('explode');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconPartSplit /></div>
+                <div className="sidebar-tool-text">
+                  <strong>AI Part Split & Explode</strong>
+                  <span>10-zone 3D spatial disassembly & part isolation</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'explode' ? 'ACTIVE' : 'SELECT'}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`sidebar-tool-card ${activeTool === 'spatial' ? 'active' : ''}`}
+              onClick={() => {
+                selectTool('spatial');
+                setSidebarOpen(false);
+              }}
+            >
+              <div className="sidebar-tool-main">
+                <div className="sidebar-tool-icon"><IconSpatialScale /></div>
+                <div className="sidebar-tool-text">
+                  <strong>Spatial Scale & Zero-G Rig</strong>
+                  <span>3D W×H×D cage, Zero-G float & gravity drop test</span>
+                </div>
+              </div>
+              <span className="sidebar-tool-status">{activeTool === 'spatial' ? 'ACTIVE' : 'SELECT'}</span>
             </button>
           </div>
 
@@ -2549,46 +2439,10 @@ export function Playground({
                 <div className="sidebar-tool-icon"><IconGimbal /></div>
                 <div className="sidebar-tool-text">
                   <strong>Flight Gimbal</strong>
-                  <span>Dynamic 3D basketball tracking</span>
+                  <span>Dynamic 3D target lock & tracking</span>
                 </div>
               </div>
               <span className="sidebar-tool-status">{activeTool === 'gimbal' ? 'ACTIVE' : 'SELECT'}</span>
-            </button>
-
-            <button
-              type="button"
-              className={`sidebar-tool-card ${activeTool === 'lift' ? 'active' : ''}`}
-              onClick={() => {
-                selectTool('lift');
-                setSidebarOpen(false);
-              }}
-            >
-              <div className="sidebar-tool-main">
-                <div className="sidebar-tool-icon"><IconLift /></div>
-                <div className="sidebar-tool-text">
-                  <strong>Hydraulic Lift</strong>
-                  <span>Vertical platform pull lever</span>
-                </div>
-              </div>
-              <span className="sidebar-tool-status">{activeTool === 'lift' ? 'ACTIVE' : 'SELECT'}</span>
-            </button>
-
-            <button
-              type="button"
-              className={`sidebar-tool-card ${activeTool === 'scrubber' ? 'active' : ''}`}
-              onClick={() => {
-                selectTool('scrubber');
-                setSidebarOpen(false);
-              }}
-            >
-              <div className="sidebar-tool-main">
-                <div className="sidebar-tool-icon"><IconScrubber /></div>
-                <div className="sidebar-tool-text">
-                  <strong>Time Scrubber</strong>
-                  <span>Exploded assembly timeline</span>
-                </div>
-              </div>
-              <span className="sidebar-tool-status">{activeTool === 'scrubber' ? 'ACTIVE' : 'SELECT'}</span>
             </button>
           </div>
 
@@ -2671,10 +2525,13 @@ export function Playground({
                 type="button"
                 className="playground-top-btn"
                 style={{ justifyContent: 'center', padding: '8px 10px' }}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  setSidebarOpen(false);
+                  onOpenSynthesize?.();
+                }}
                 disabled={uploading}
               >
-                <span>↑ Upload GLB</span>
+                <span>✦ Generate 3D</span>
               </button>
               {model.object && (
                 <button

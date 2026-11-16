@@ -4,7 +4,7 @@ import { createModelInstance, modelFit } from './spatialkit/model';
 
 export const MAX_MODEL_MB = 500;
 export const MAX_MODEL_BYTES = MAX_MODEL_MB * 1024 * 1024;
-export const MODEL_FIT = 3.5;
+export const MODEL_FIT = 3.35;
 
 export interface ModelUploadProgress {
   percent: number;
@@ -16,13 +16,14 @@ export interface ModelAsset {
   name: string;
   filename: string;
   format: string;
+  sourceUrl?: string;
   object?: Object3D;
   animations?: readonly AnimationClip[];
   hasAnimations?: boolean;
   file?: File;
   dispose?: () => void;
 }
-export const DEMO_MODEL: ModelAsset = { id: 'pump', name: 'PX–04 Pump', filename: 'pump.glb', format: 'GLB', hasAnimations: true };
+export const DEMO_MODEL: ModelAsset = { id: 'robot-dog', name: 'Quadruped Robot Dog (Lux3D)', filename: 'robot-dog.glb', format: 'Aholo Lux3D · GLB', hasAnimations: false };
 
 /** Read and validate the container before GLTFLoader can fetch any referenced resources. */
 export function validateModelFile(filename: string, bytes: ArrayBuffer): Record<string, any> {
@@ -50,6 +51,62 @@ export function validateModelFile(filename: string, bytes: ArrayBuffer): Record<
   if (!Array.isArray(extensions)) throw new Error('Invalid glTF extensions.');
   if (extensions.some((name: string) => ['KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu'].includes(name))) throw new Error('This preview needs an uncompressed GLB. Export without Draco, Meshopt, or KTX2 compression.');
   return document;
+}
+
+/**
+ * Compress oversized textures (downscaling >1024px maps to 1024px) and optimize
+ * geometry buffers so AI-generated models render and fly at 60fps without lag.
+ */
+export function compressAndOptimizeModelScene(root: Object3D) {
+  const seenTextures = new Set<Texture>();
+  const MAX_TEX_DIM = 1024;
+
+  root.traverse((child) => {
+    if (!(child instanceof Mesh)) return;
+    const mesh = child;
+    const geo = mesh.geometry;
+    if (geo) {
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      if (!geo.boundingSphere) geo.computeBoundingSphere();
+    }
+
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      for (const value of Object.values(mat)) {
+        if (!(value instanceof Texture) || seenTextures.has(value)) continue;
+        seenTextures.add(value);
+        const img = value.image as { width?: number; height?: number; close?: () => void } | undefined;
+        if (
+          img &&
+          typeof document !== 'undefined' &&
+          typeof img.width === 'number' &&
+          typeof img.height === 'number' &&
+          (img.width > MAX_TEX_DIM || img.height > MAX_TEX_DIM)
+        ) {
+          try {
+            const scale = MAX_TEX_DIM / Math.max(img.width, img.height);
+            const targetW = Math.max(1, Math.round(img.width * scale));
+            const targetH = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img as CanvasImageSource, 0, 0, targetW, targetH);
+              if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) {
+                img.close();
+              }
+              value.image = canvas;
+              value.needsUpdate = true;
+            }
+          } catch {
+            // Keep original texture if canvas draw fails
+          }
+        }
+      }
+    }
+  });
 }
 
 export function disposeAsset(root: Object3D) {
@@ -155,10 +212,11 @@ export async function prepareModel(
 
   const gltf = await new GLTFLoader(manager).parseAsync(bytes, '');
   try {
-    onProgress?.({ percent: 92, stage: 'Fitting assembly to 3D viewport…' });
+    onProgress?.({ percent: 90, stage: 'Compressing textures & optimizing 3D mesh…' });
     if (onProgress && typeof window !== 'undefined') {
       await new Promise((r) => setTimeout(r, 16));
     }
+    compressAndOptimizeModelScene(gltf.scene);
     modelFit(gltf.scene, MODEL_FIT);
     gltf.scene.traverse((child) => {
       if ((child as Mesh).isMesh) {
@@ -188,12 +246,30 @@ export async function prepareModelFromUrl(
   onProgress?: (progress: ModelUploadProgress) => void
 ): Promise<ModelAsset> {
   onProgress?.({ percent: 5, stage: 'Downloading 3D model…' });
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    if (/^https?:\/\//i.test(url)) {
+      response = await fetch(`/api/glb-proxy?url=${encodeURIComponent(url)}`);
+    } else {
+      throw new Error('Could not download 3D model.');
+    }
+  }
+  if (!response.ok && /^https?:\/\//i.test(url)) {
+    response = await fetch(`/api/glb-proxy?url=${encodeURIComponent(url)}`);
+  }
   if (!response.ok) throw new Error(`Could not load model from URL (${response.status})`);
   const blob = await response.blob();
   const cleanUrl = url.split('?')[0].split('#')[0];
   const urlFilename = cleanUrl.split('/').pop() || 'model.glb';
-  const filename = defaultName || (urlFilename.endsWith('.glb') || urlFilename.endsWith('.gltf') ? urlFilename : `${urlFilename}.glb`);
+  const rawName = (defaultName || urlFilename).trim();
+  const filename = /\.(glb|gltf)$/i.test(rawName) ? rawName : `${rawName}.glb`;
   const file = new File([blob], filename, { type: blob.type || 'model/gltf-binary' });
-  return prepareModel(file, onProgress);
+  const asset = await prepareModel(file, onProgress);
+  return {
+    ...asset,
+    name: defaultName ? defaultName.replace(/\.(glb|gltf)$/i, '') : asset.name,
+    sourceUrl: /^https?:\/\//i.test(url) ? url : undefined,
+  };
 }

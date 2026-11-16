@@ -4,6 +4,7 @@ import {
   setStoredApiKey,
   getStoredEndpoint,
   setStoredEndpoint,
+  hasConfiguredApiKey,
 } from '../services/aholo';
 
 interface SettingsModalProps {
@@ -36,6 +37,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   if (!isOpen) return null;
 
+  const isKeyConfigured = hasConfiguredApiKey();
+
   const handleSave = () => {
     setStoredApiKey(apiKey.trim());
     setStoredEndpoint(endpoint);
@@ -43,7 +46,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setTimeout(() => {
       setSaved(false);
       onClose();
-    }, 800);
+    }, 500);
   };
 
   return (
@@ -81,24 +84,43 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {/* Body */}
         <div className="lux-modal-body">
+          {isKeyConfigured && !apiKey && (
+            <div
+              style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                borderRadius: 10,
+                padding: '10px 14px',
+                fontSize: 11.5,
+                color: '#6ee7b7',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <span>✓</span>
+              <span>Server API key detected in <code>.env.local</code> and active.</span>
+            </div>
+          )}
+
           {/* API Key */}
           <div>
             <div className="lux-section-label" style={{ marginBottom: 6 }}>
-              <span>Aholo API Key (Bearer Token):</span>
+              <span>Aholo API Key (Optional Override):</span>
               <a
-                href="https://labs.aholo3d.com/api-keys"
+                href="https://www.aholo.ai/hackathon"
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: '#38bdf8', fontSize: 11, textDecoration: 'underline' }}
               >
-                Get Key ↗
+                Aholo Console ↗
               </a>
             </div>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Paste your Aholo API key here..."
+              placeholder={isKeyConfigured ? 'Using AHOLO_API_KEY from .env.local…' : 'Paste your Aholo API key here...'}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -122,7 +144,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 gap: 5,
               }}
             >
-              <span>🔒</span> Stored client-side in localStorage and proxied securely.
+              <span>🔒</span> Proxied via local gateway to <code>api.aholo.ai</code>.
             </div>
           </div>
 
@@ -152,7 +174,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: 12 }}>🌐 International</div>
-                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>api.aholo3d.com</div>
+                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>api.aholo.ai (/global/lux3d/v1)</div>
               </button>
 
               <button
@@ -175,7 +197,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: 12 }}>🌏 China Region</div>
-                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>api.aholo3d.cn</div>
+                <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>api.aholo3d.cn (/lux3d/v1)</div>
               </button>
             </div>
           </div>
@@ -203,7 +225,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 cursor: 'pointer',
               }}
             >
-              Cancel
+              Close
             </button>
             <button
               type="button"
@@ -211,7 +233,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               onClick={handleSave}
               style={{ width: 'auto', padding: '8px 18px', fontSize: 12 }}
             >
-              {saved ? '✓ Saved!' : 'Save Credentials'}
+              {saved ? '✓ Saved!' : 'Save & Close'}
             </button>
           </div>
         </div>

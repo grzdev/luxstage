@@ -1,40 +1,60 @@
-export type Lux3DVersion = 'G1-Turbo' | 'G1' | 'Pro';
+export type Lux3DVersion = 'G1-Turbo' | 'G1';
 
-export interface Lux3DTaskCreateRequest {
-  version?: Lux3DVersion;
-  face_count?: number;
-  image_1?: string; // Image URL or Base64 data URL
+export type Lux3DStyle =
+  | 'photorealistic'
+  | 'cyberpunk'
+  | 'fantasy'
+  | 'cartoon'
+  | 'anime'
+  | 'hand_painted'
+  | 'glass';
+
+export interface Lux3DGenerateRequest {
   prompt?: string;
-  enable_pbr?: boolean;
+  image?: string; // URL or Base64 Data URL
+  style?: Lux3DStyle;
+  version?: Lux3DVersion;
+  faceCount?: number;
+  enablePbr?: boolean;
 }
 
-export interface Lux3DTaskCreateResponse {
-  task_id: string;
-  code?: number;
-  message?: string;
-  msg?: string;
+export interface AholoApiEnvelope<T> {
+  c: string;
+  m?: string;
+  d: T;
+  f?: string | null;
 }
 
-export type Lux3DTaskStatus = 'pending' | 'processing' | 'running' | 'completed' | 'failed';
+/**
+ * Official Aholo Lux3D status codes:
+ * 0 = init / queued
+ * 1 = running
+ * 3 = success
+ * 4 = failed
+ * 6 = canceled
+ */
+export type Lux3DTaskNumericStatus = 0 | 1 | 3 | 4 | 6;
 
-export interface Lux3DTaskStatusResponse {
-  task_id: string;
-  status: Lux3DTaskStatus;
-  glb?: string;
-  ply?: string;
-  preview_image?: string;
-  progress?: number;
-  err_msg?: string;
-  error?: string;
+export interface Lux3DTaskOutputItem {
+  content?: string;
+}
+
+export interface Lux3DTaskDetail {
+  taskId?: number;
+  bizId?: string;
+  status?: Lux3DTaskNumericStatus | number;
+  outputs?: Lux3DTaskOutputItem[];
 }
 
 export interface StagedModel {
   id: string;
   name: string;
-  source: 'aholo-lux3d' | 'local-preset' | 'upload';
+  source: 'aholo-lux3d' | 'local-preset';
   url: string;
   previewUrl?: string;
   prompt?: string;
+  style?: Lux3DStyle;
+  taskId?: number;
   createdAt: number;
 }
 
