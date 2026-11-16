@@ -36,17 +36,26 @@ export default async (req) => {
       });
     }
 
+    const region = (req.headers.get('x-aholo-region') || 'intl').toLowerCase();
+    const defaultBase = region === 'cn' ? 'https://api.aholo3d.cn' : 'https://api.aholo.ai';
     const base = (
-      process.env.AHOLO_API_BASE ||
-      process.env.VITE_AHOLO_API_BASE ||
-      'https://api.aholo.ai'
+      region === 'cn'
+        ? 'https://api.aholo3d.cn'
+        : process.env.AHOLO_API_BASE || process.env.VITE_AHOLO_API_BASE || defaultBase
     ).replace(/\/+$/, '');
 
     const targetUrl = `${base}${subPath.startsWith('/') ? subPath : `/${subPath}`}${reqUrl.search}`;
 
     // Aholo OpenAPI expects the raw API key in Authorization (no "Bearer " prefix)
-    const incomingAuth = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    const finalAuth = incomingAuth || serverKey;
+    // Prefer user-supplied key from X-Aholo-Key / Authorization header, falling back to server key
+    const incomingKey = (
+      req.headers.get('x-aholo-key') ||
+      req.headers.get('authorization') ||
+      ''
+    )
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+    const finalAuth = incomingKey || serverKey;
 
     const headers = new Headers();
     headers.set('Content-Type', req.headers.get('content-type') || 'application/json');

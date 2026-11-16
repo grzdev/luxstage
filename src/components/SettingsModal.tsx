@@ -6,6 +6,7 @@ import {
   setStoredEndpoint,
   hasConfiguredApiKey,
 } from '../services/aholo';
+import { SmoothScrollArea } from './SmoothScrollArea';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -83,8 +84,44 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         {/* Body */}
-        <div className="lux-modal-body">
-          {isKeyConfigured && !apiKey && (
+        <SmoothScrollArea className="lux-modal-body">
+          {apiKey.trim() ? (
+            <div
+              style={{
+                background: 'rgba(14, 165, 233, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                borderRadius: 10,
+                padding: '10px 14px',
+                fontSize: 11.5,
+                color: 'var(--ink)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <span>✦ Custom Aholo API key entered (will override default server key).</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setApiKey('');
+                  setStoredApiKey('');
+                }}
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  padding: '3px 8px',
+                  fontSize: 10.5,
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Clear Key
+              </button>
+            </div>
+          ) : isKeyConfigured ? (
             <div
               style={{
                 background: 'rgba(16, 185, 129, 0.12)',
@@ -92,35 +129,35 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 borderRadius: 10,
                 padding: '10px 14px',
                 fontSize: 11.5,
-                color: '#6ee7b7',
+                color: '#10b981',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
               }}
             >
               <span>✓</span>
-              <span>Server API key detected in <code>.env.local</code> and active.</span>
+              <span>Default LuxStage cloud API key is active — or paste your own key below to use your personal quota.</span>
             </div>
-          )}
+          ) : null}
 
           {/* API Key */}
           <div>
             <div className="lux-section-label" style={{ marginBottom: 6 }}>
-              <span>Aholo API Key (Optional Override):</span>
+              <span>Your Aholo API Key (Optional Override):</span>
               <a
                 href="https://www.aholo.ai/hackathon"
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: '#38bdf8', fontSize: 11, textDecoration: 'underline' }}
               >
-                Aholo Console ↗
+                Get Aholo Key ↗
               </a>
             </div>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={isKeyConfigured ? 'Using AHOLO_API_KEY from .env.local…' : 'Paste your Aholo API key here...'}
+              placeholder={isKeyConfigured ? 'Leave blank to use default key, or paste your own Aholo key…' : 'Paste your Aholo API key here...'}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -144,7 +181,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 gap: 5,
               }}
             >
-              <span>🔒</span> Proxied via local gateway to <code>api.aholo.ai</code>.
+              <span>🔒</span> Stored in your browser and proxied securely to <code>api.aholo.ai</code>.
             </div>
           </div>
 
@@ -236,7 +273,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               {saved ? '✓ Saved!' : 'Save & Close'}
             </button>
           </div>
-        </div>
+        </SmoothScrollArea>
       </div>
     </div>
   );

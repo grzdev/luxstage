@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ChangeEvent, type ReactNode } from 'r
 import type { StagedModel, Lux3DStyle, Lux3DVersion } from '../../types/aholo';
 import type { GenerationPhase, GenerateOptions } from '../../hooks/useAholoGeneration';
 import { hasConfiguredApiKey } from '../../services/aholo';
+import { SmoothScrollArea } from '../SmoothScrollArea';
 
 interface GenerationStudioProps {
   isOpen: boolean;
@@ -361,7 +362,7 @@ export function GenerationStudio({
             </div>
 
             {/* Consistent-Height Tab Stage */}
-            <div className="lux-modal-body lux-tab-stage" key={activeTab}>
+            <SmoothScrollArea className="lux-modal-body lux-tab-stage" key={activeTab}>
               {activeTab === 'prompt' && (
                 <>
                   {/* Prompt Input */}
@@ -628,7 +629,7 @@ export function GenerationStudio({
                   <span>Generate 3D Model</span>
                 </button>
               )}
-            </div>
+            </SmoothScrollArea>
           </>
         )}
       </div>

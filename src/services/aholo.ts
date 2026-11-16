@@ -60,16 +60,15 @@ export function setStoredEndpoint(endpoint: string): void {
 }
 
 /**
- * Returns the Lux3D v1 path prefix according to @manycore/aholo-sdk-lux3d:
- * - China ('https://api.aholo3d.cn'): '/lux3d/v1'
- * - Global ('https://api.aholo.ai' or '/api/aholo'): '/global/lux3d/v1'
+ * Returns the Lux3D v1 path prefix routed through /api/aholo so browser CORS never blocks
+ * either International ('/api/aholo/global/lux3d/v1') or China ('/api/aholo/lux3d/v1').
  */
 function getLux3dPrefix(base: string): string {
   const cleanBase = base.replace(/\/+$/, '');
-  if (cleanBase.includes('aholo3d.cn')) {
-    return `${cleanBase}/lux3d/v1`;
+  if (cleanBase.includes('aholo3d.cn') || cleanBase === 'cn') {
+    return '/api/aholo/lux3d/v1';
   }
-  return `${cleanBase}/global/lux3d/v1`;
+  return '/api/aholo/global/lux3d/v1';
 }
 
 /**
@@ -78,11 +77,15 @@ function getLux3dPrefix(base: string): string {
  */
 function getHeaders(customKey?: string): HeadersInit {
   const key = (customKey || getStoredApiKey()).replace(/^Bearer\s+/i, '').trim();
+  const storedEndpoint = getStoredEndpoint();
+  const isChinaRegion = storedEndpoint.includes('aholo3d.cn') || storedEndpoint === 'cn';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Aholo-Region': isChinaRegion ? 'cn' : 'intl',
   };
   if (key) {
     headers['Authorization'] = key;
+    headers['X-Aholo-Key'] = key;
   }
   return headers;
 }

@@ -65,9 +65,10 @@ export default defineConfig(({ mode }) => {
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq) => {
               // Aholo OpenAPI uses raw API key in Authorization header (no "Bearer " prefix)
-              const existingAuth = proxyReq.getHeader('authorization');
-              if (typeof existingAuth === 'string' && existingAuth.trim()) {
-                const rawKey = existingAuth.replace(/^Bearer\s+/i, '').trim();
+              // Prefer custom user key (X-Aholo-Key or Authorization), fallback to server .env.local key
+              const customKeyHeader = proxyReq.getHeader('x-aholo-key') || proxyReq.getHeader('authorization');
+              if (typeof customKeyHeader === 'string' && customKeyHeader.trim()) {
+                const rawKey = customKeyHeader.replace(/^Bearer\s+/i, '').trim();
                 proxyReq.setHeader('authorization', rawKey);
               } else if (aholoKey) {
                 proxyReq.setHeader('authorization', aholoKey);

@@ -36,6 +36,7 @@ import {
   TactileDial,
   TactileJoystick,
 } from './ControlsLab';
+import { SmoothScrollArea } from './components/SmoothScrollArea';
 
 function CanvasCaptureBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => string | null) | null> }) {
   const { gl, scene, camera } = useThree();
@@ -1011,80 +1012,6 @@ export function Playground({
     setSnapshotToast('Snapshot downloaded!');
   }
 
-  // Smooth 60fps inertial wheel scrolling inside controls panels (.console-body, .lux-part-chips, .playground-sidebar)
-  useEffect(() => {
-    const root = viewportRef.current;
-    if (!root) return;
-
-    const animMap = new WeakMap<HTMLElement, { target: number; current: number; raf: number }>();
-
-    const onWheel = (e: WheelEvent) => {
-      const targetEl = e.target as HTMLElement | null;
-      if (!targetEl) return;
-
-      const consoleWrap = targetEl.closest('.playground-active-console, .playground-sidebar') as HTMLElement | null;
-      if (!consoleWrap) return;
-
-      // Always prevent wheel inside the controls panels from zooming the 3D canvas behind them
-      e.stopPropagation();
-
-      // Find the nearest scrollable container with overflow room
-      let scrollEl = targetEl.closest('.lux-part-chips, .console-body, .playground-sidebar') as HTMLElement | null;
-      if (scrollEl && scrollEl.classList.contains('lux-part-chips')) {
-        const atTop = scrollEl.scrollTop <= 0 && e.deltaY < 0;
-        const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1 && e.deltaY > 0;
-        if (atTop || atBottom || scrollEl.scrollHeight <= scrollEl.clientHeight) {
-          scrollEl = targetEl.closest('.console-body') as HTMLElement | null;
-        }
-      }
-      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) return;
-
-      // Smooth discrete mouse-wheel ticks; let native high-frequency trackpad gestures pass through naturally
-      const isMouseWheelStep = e.deltaMode === 1 || Math.abs(e.deltaY) >= 40;
-      if (!isMouseWheelStep) return;
-
-      e.preventDefault();
-      const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-      const pixelDelta = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY * 0.72;
-
-      let state = animMap.get(scrollEl);
-      if (!state) {
-        state = {
-          target: scrollEl.scrollTop,
-          current: scrollEl.scrollTop,
-          raf: 0,
-        };
-        animMap.set(scrollEl, state);
-      } else if (!state.raf) {
-        state.current = scrollEl.scrollTop;
-        state.target = scrollEl.scrollTop;
-      }
-
-      state.target = Math.max(0, Math.min(maxScroll, state.target + pixelDelta));
-
-      if (!state.raf) {
-        const el = scrollEl;
-        const s = state;
-        const step = () => {
-          const diff = s.target - s.current;
-          if (Math.abs(diff) < 0.5) {
-            el.scrollTop = s.target;
-            s.current = s.target;
-            s.raf = 0;
-            return;
-          }
-          s.current += diff * 0.24;
-          el.scrollTop = s.current;
-          s.raf = requestAnimationFrame(step);
-        };
-        s.raf = requestAnimationFrame(step);
-      }
-    };
-
-    root.addEventListener('wheel', onWheel, { passive: false });
-    return () => root.removeEventListener('wheel', onWheel);
-  }, []);
-
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1659,7 +1586,7 @@ export function Playground({
             </div>
           </div>
 
-          <div
+          <SmoothScrollArea
             className="console-body"
             style={{
               width: '100%',
@@ -2063,7 +1990,7 @@ export function Playground({
                   )}
                 </div>
 
-                <div className="lux-part-chips">
+                <SmoothScrollArea className="lux-part-chips">
                   {parts.slice(0, 12).map((part) => {
                     const isSelected = selectedPartId === part.id;
                     const cleanLabel = String(part.metadata?.label ?? part.name).replace(/_/g, ' ');
@@ -2089,7 +2016,7 @@ export function Playground({
                       </button>
                     );
                   })}
-                </div>
+                </SmoothScrollArea>
 
                 <div className="lux-console-actions-row">
                   <button
@@ -2242,7 +2169,7 @@ export function Playground({
               </div>
             )}
 
-          </div>
+          </SmoothScrollArea>
         </aside>
       )}
 
@@ -2347,7 +2274,7 @@ export function Playground({
           </button>
         </div>
 
-        <div className="sidebar-content">
+        <SmoothScrollArea className="sidebar-content">
           {/* Aholo Material & Surface Lab */}
           <div className="sidebar-section">
             <span className="sidebar-section-title">Aholo Surface & Topology</span>
@@ -2548,7 +2475,7 @@ export function Playground({
               )}
             </div>
           </div>
-        </div>
+        </SmoothScrollArea>
       </aside>
 
       {/* ─── Snapshot Preview Modal (Shows immediately after capturing snapshot) ─── */}
