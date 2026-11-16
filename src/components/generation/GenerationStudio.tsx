@@ -48,7 +48,7 @@ const VISUAL_PRESETS: VisualPreset[] = [
   },
   {
     id: 'macbook-hello',
-    title: 'Notched MacBook ("Hello")',
+    title: 'MacBook Pro',
     shortName: 'MacBook Pro',
     category: 'Workspace · Laptop',
     style: 'photorealistic',
