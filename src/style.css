@@ -4309,7 +4309,7 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   pointer-events: auto;
   transition: all 0.2s ease;
   white-space: nowrap;
-  max-width: min(280px, calc(50vw - 230px));
+  max-width: min(215px, max(120px, calc(50vw - 360px)));
   min-width: 0;
   overflow: hidden;
 }

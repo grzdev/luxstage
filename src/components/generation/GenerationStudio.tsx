@@ -22,6 +22,7 @@ interface GenerationStudioProps {
 interface VisualPreset {
   id: string;
   title: string;
+  shortName: string;
   category: string;
   style: Lux3DStyle;
   prompt: string;
@@ -32,6 +33,7 @@ const VISUAL_PRESETS: VisualPreset[] = [
   {
     id: 'modern-sofa',
     title: 'Modern Sculpted Sofa',
+    shortName: 'Modern Sofa',
     category: 'Interior · Furniture',
     style: 'photorealistic',
     prompt:
@@ -47,6 +49,7 @@ const VISUAL_PRESETS: VisualPreset[] = [
   {
     id: 'macbook-hello',
     title: 'Notched MacBook ("Hello")',
+    shortName: 'MacBook Pro',
     category: 'Workspace · Laptop',
     style: 'photorealistic',
     prompt:
@@ -62,6 +65,7 @@ const VISUAL_PRESETS: VisualPreset[] = [
   {
     id: 'concept-sneaker',
     title: 'Sculpted Concept Sneaker',
+    shortName: 'Concept Sneaker',
     category: 'Wearable · Design',
     style: 'photorealistic',
     prompt:
@@ -76,6 +80,7 @@ const VISUAL_PRESETS: VisualPreset[] = [
   {
     id: 'studio-headphones',
     title: 'Studio Over-Ear Headphones',
+    shortName: 'White Headphones',
     category: 'Audio · Lifestyle',
     style: 'photorealistic',
     prompt:
@@ -192,10 +197,15 @@ export function GenerationStudio({
     if (activeTab === 'prompt' && !prompt.trim()) return;
     if (activeTab === 'image' && !selectedImage) return;
 
+    const matchedPreset = VISUAL_PRESETS.find(
+      (p) => p.id === selectedPresetId || p.prompt === prompt.trim()
+    );
+
     setIsSubmitting(true);
     try {
       await onGenerate({
         prompt: activeTab === 'prompt' ? prompt.trim() : undefined,
+        displayTitle: activeTab === 'prompt' ? matchedPreset?.shortName : undefined,
         image: activeTab === 'image' ? selectedImage || undefined : undefined,
         style,
         version,

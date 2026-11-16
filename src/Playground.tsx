@@ -40,6 +40,7 @@ import {
   TactileJoystick,
 } from './ControlsLab';
 import { SmoothScrollArea } from './components/SmoothScrollArea';
+import { formatCompactModelName } from './hooks/useAholoGeneration';
 
 function CanvasCaptureBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => string | null) | null> }) {
   const { gl, scene, camera } = useThree();
@@ -1147,7 +1148,14 @@ export function Playground({
         <span className="credit-icon">©</span>
         {model.object ? (
           <span className="credit-text" title={model.name}>
-            <span>Model:</span> <strong className="credit-name">{model.name}</strong>
+            <span>Model:</span>{' '}
+            <strong className="credit-name">
+              {/brushed anodized aluminum wire/i.test(model.name)
+                ? 'White Headphones'
+                : model.name.length > 20
+                ? formatCompactModelName(model.name)
+                : model.name}
+            </strong>
           </span>
         ) : (
           <span className="credit-text">

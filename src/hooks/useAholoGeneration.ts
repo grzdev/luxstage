@@ -23,6 +23,7 @@ export type GenerationPhase =
 
 export interface GenerateOptions {
   prompt?: string;
+  displayTitle?: string;
   image?: string;
   style?: Lux3DStyle;
   version?: Lux3DVersion;
@@ -32,6 +33,38 @@ export interface GenerateOptions {
     name: string,
     onProgress: (percent: number, stage: string) => void
   ) => Promise<void>;
+}
+
+const PROMPT_FILLER_WORDS = new Set([
+  'a', 'an', 'the', 'single', 'with', 'and', 'or', 'of', 'on', 'in', 'for', 'to', 'by',
+  'detailed', 'photorealistic', 'realistic', 'modern', 'minimalist', 'clean', 'sleek',
+  'ergonomic', 'signature', 'sculpted', 'brushed', 'anodized', 'high', 'quality', 'ultra',
+  '3d', 'model', 'object', 'asset', 'design', 'style', 'showing', 'featuring',
+]);
+
+export function formatCompactModelName(prompt?: string, explicitTitle?: string): string {
+  const source = (explicitTitle || prompt || '').trim();
+  if (!source) return 'Aholo Asset';
+
+  if (explicitTitle && explicitTitle.trim().length <= 22) {
+    return explicitTitle.trim();
+  }
+
+  const words = source
+    .replace(/[^a-zA-Z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const meaningful = words.filter((w) => !PROMPT_FILLER_WORDS.has(w.toLowerCase()));
+  const chosen = (meaningful.length >= 2 ? meaningful : words).slice(0, 2);
+  let title = chosen
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+  if (title.length > 20) {
+    title = `${title.slice(0, 19).trimEnd()}…`;
+  }
+  return title || 'Aholo Asset';
 }
 
 export interface UseAholoGenerationReturn {
@@ -53,7 +86,15 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
   const [error, setError] = useState<string | null>(null);
 
   const [recentModels, setRecentModels] = useState<StagedModel[]>(() => {
-    const saved = loadSavedGeneratedModels();
+    const saved = loadSavedGeneratedModels().map((m) => ({
+      ...m,
+      name:
+        m.prompt && /headphones/i.test(m.prompt)
+          ? 'White Headphones'
+          : m.name.length > 22
+          ? formatCompactModelName(m.prompt || m.name)
+          : m.name,
+    }));
     const savedIds = new Set(saved.map((m) => m.id));
     return [...saved, ...SHOWCASE_PRESETS.filter((p) => !savedIds.has(p.id))];
   });
@@ -116,11 +157,13 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
         setStatusText('Preparing & mounting 3D model into LuxStage…');
         setProgressPercent(88);
 
+        const shortName = options.prompt || options.displayTitle
+          ? formatCompactModelName(options.prompt, options.displayTitle)
+          : `Aholo #${String(taskId).slice(-4)}`;
+
         const newModel: StagedModel = {
           id: `aholo-${taskId}`,
-          name: options.prompt
-            ? options.prompt.slice(0, 38) + (options.prompt.length > 38 ? '…' : '')
-            : `Aholo Model #${String(taskId).slice(-5)}`,
+          name: shortName,
           source: 'aholo-lux3d',
           url: glbUrl,
           prompt: options.prompt,
