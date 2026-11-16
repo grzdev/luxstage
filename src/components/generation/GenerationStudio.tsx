@@ -30,12 +30,12 @@ interface VisualPreset {
 
 const VISUAL_PRESETS: VisualPreset[] = [
   {
-    id: 'couch-set',
-    title: 'Designer Couch Set',
-    category: 'Interior · Living',
+    id: 'modern-sofa',
+    title: 'Modern Sculpted Sofa',
+    category: 'Interior · Furniture',
     style: 'photorealistic',
     prompt:
-      'Modern minimalist L-shaped boucle fabric couch set with plush throw pillows and a warm walnut coffee table',
+      'Single modern curved cream boucle fabric designer sofa with deep stitched seat cushions, sculpted rounded armrests, and warm oak wooden plinth legs',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 11V8a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v3" />
@@ -45,16 +45,17 @@ const VISUAL_PRESETS: VisualPreset[] = [
     ),
   },
   {
-    id: 'apple-workdesk',
-    title: 'Apple Studio Workdesk',
-    category: 'Workspace · Tech',
+    id: 'macbook-hello',
+    title: 'Notched MacBook ("Hello")',
+    category: 'Workspace · Laptop',
     style: 'photorealistic',
     prompt:
-      'Clean minimalist creator workdesk with sleek aluminum Studio Display monitor, MacBook Pro, wireless keyboard and warm desk lamp',
+      'Single open modern unibody MacBook Pro laptop in sleek silver aluminum, thin display bezel with top center camera notch showing the colorful gradient cursive hello welcome screen, dark backlit keyboard, and glass trackpad',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="18" height="12" rx="2" />
-        <path d="M8 20h8M12 16v4" />
+        <path d="M4 5h16a1 1 0 0 1 1 1v10H3V6a1 1 0 0 1 1-1Z" />
+        <path d="M10 5h4v1.5h-4z" />
+        <path d="M2 17h20l-1.2 2H3.2L2 17Z" />
       </svg>
     ),
   },
