@@ -834,8 +834,8 @@ export function Playground({
     setManualAltitude(0);
   }, [model.id]);
 
-  const isMobileElevationTool = isMobile && Boolean(activeTool);
-  const mobileModelYOffset = isMobileElevationTool ? 1.25 : 0;
+  const isMobileElevationTool = isMobile && Boolean(activeTool) && !consoleMinimized;
+  const mobileModelYOffset = isMobileElevationTool ? 0.95 : 0;
 
   async function handleDownloadModel() {
     if (onDownloadModel) {
@@ -925,7 +925,7 @@ export function Playground({
       }
     }
     setActiveTool(toolName);
-    setConsoleMinimized(isPhoneViewport());
+    setConsoleMinimized(false);
     setCrossSectionEnabled(toolName === 'slicer');
     if (toolName === 'explode' && proceduralExplode === 0) {
       // Give an immediate subtle 35% radial part split preview when opening Part Split

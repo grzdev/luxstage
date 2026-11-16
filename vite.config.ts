@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
       {
         name: 'luxstage-glb-cors-proxy',
         configureServer(server) {
+          server.middlewares.use('/api/aholo/key-status', (_req: IncomingMessage, res: ServerResponse) => {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ configured: Boolean(aholoKey) }));
+          });
           server.middlewares.use('/api/glb-proxy', async (req: IncomingMessage, res: ServerResponse) => {
             try {
               const reqUrl = new URL(req.url || '', 'http://localhost');

@@ -6559,3 +6559,111 @@ button, a { transition: background .15s, color .15s, border-color .15s; }
   padding-top: 6px;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
+
+/* ─── Mobile Responsiveness & Touch Ergonomics (Phones & Compact Viewports) ─── */
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+    gap: 8px;
+    height: 52px;
+    min-height: 52px;
+  }
+  .brand {
+    font-size: 17px;
+    gap: 7px;
+  }
+  .brand-mark {
+    width: 24px;
+    height: 26px;
+    font-size: 15px;
+    border-radius: 6px;
+  }
+  .topbar-nav {
+    gap: 8px;
+  }
+  .topbar-settings-btn {
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+  .topbar-nav a {
+    font-size: 11px;
+  }
+
+  /* Prevent Top-Left Generate Button from colliding with Top-Right Reset/Tools on phones */
+  .playground-left-stack {
+    top: 10px;
+    left: 10px;
+    max-width: calc(100vw - 165px) !important;
+  }
+  .playground-upload-cta.top-left-corner {
+    min-width: 0 !important;
+    width: auto !important;
+    padding: 8px 13px !important;
+    font-size: 11.5px !important;
+    border-radius: 10px;
+    gap: 6px;
+  }
+  .playground-topbar {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+
+  /* Lower the floating dock to sit cleanly above the bottom edge (gain 46px of 3D space!) */
+  .playground-dock-container {
+    bottom: max(12px, env(safe-area-inset-bottom, 12px)) !important;
+    max-width: calc(100vw - 16px);
+  }
+  .playground-active-console {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+    width: calc(100vw - 24px) !important;
+    max-width: 356px !important;
+    min-width: 0 !important;
+    max-height: 44dvh !important;
+    padding: 10px 14px !important;
+  }
+  .playground-active-console.minimized {
+    max-height: 48px !important;
+    padding: 8px 14px !important;
+  }
+  .lux-tool-console-stack {
+    min-width: 0;
+    max-width: 100%;
+    gap: 7px;
+  }
+  .lux-finish-btn {
+    padding: 6px 8px;
+  }
+
+  /* Responsive Generate 3D Model Modal on Mobile */
+  .lux-modal-backdrop {
+    padding: 10px;
+  }
+  .lux-modal {
+    max-height: 92dvh;
+    border-radius: 16px;
+  }
+  .lux-modal-header {
+    padding: 14px 16px 12px;
+  }
+  .lux-segmented-bar-wrap {
+    padding: 10px 16px 0;
+  }
+  .lux-modal-body.lux-tab-stage {
+    padding: 14px 16px 18px;
+    min-height: 360px;
+  }
+  .lux-generation-stage {
+    padding: 18px 16px 22px;
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar-nav a[href*="aholo.ai"] {
+    display: none;
+  }
+  .topbar-sep {
+    display: none;
+  }
+}

@@ -1,0 +1,27 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# 1. Proxy Aholo Lux3D API calls through Netlify Function (injects server API key & handles CORS)
+[[redirects]]
+  from = "/api/aholo/*"
+  to = "/.netlify/functions/aholo"
+  status = 200
+  force = true
+
+# 2. Proxy generated GLB model binary downloads through Netlify Function (prevents WebGL CORS blocks)
+[[redirects]]
+  from = "/api/glb-proxy"
+  to = "/.netlify/functions/glb-proxy"
+  status = 200
+  force = true
+
+# 3. SPA fallback for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

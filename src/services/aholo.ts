@@ -11,10 +11,23 @@ const STORAGE_KEY_API_KEY = 'luxstage_aholo_api_key';
 const STORAGE_KEY_ENDPOINT = 'luxstage_aholo_endpoint';
 const STORAGE_KEY_GENERATED_MODELS = 'luxstage_generated_models_v1';
 
+let runtimeServerKeyDetected = false;
+if (typeof window !== 'undefined') {
+  fetch('/api/aholo/key-status')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (data && data.configured) {
+        runtimeServerKeyDetected = true;
+      }
+    })
+    .catch(() => {});
+}
+
 export function hasConfiguredApiKey(): boolean {
   const clientKey = getStoredApiKey();
   const serverKey = typeof __HAS_SERVER_AHOLO_KEY__ !== 'undefined' ? Boolean(__HAS_SERVER_AHOLO_KEY__) : false;
-  return Boolean(clientKey || serverKey);
+  const envKey = Boolean((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_AHOLO_API_KEY);
+  return Boolean(clientKey || serverKey || envKey || runtimeServerKeyDetected);
 }
 
 export function getStoredApiKey(): string {
