@@ -31,33 +31,19 @@ interface VisualPreset {
 
 const VISUAL_PRESETS: VisualPreset[] = [
   {
-    id: 'modern-sofa',
-    title: 'Modern Sculpted Sofa',
-    shortName: 'Modern Sofa',
-    category: 'Interior · Furniture',
+    id: 'kitchen-blender',
+    title: 'Countertop Kitchen Blender',
+    shortName: 'Kitchen Blender',
+    category: 'Appliance · Kitchen',
     style: 'photorealistic',
     prompt:
-      'Single modern curved cream boucle fabric designer sofa with deep stitched seat cushions, sculpted rounded armrests, and warm oak wooden plinth legs',
+      'Retro-modern countertop kitchen blender with a heavy brushed stainless steel pedestal base, chunky knurled metallic rotary speed dial, tall thick-walled fluted pitcher jug with sturdy curved handle, and sealed matte black lid',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 11V8a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v3" />
-        <path d="M2 11h20v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Z" />
-        <path d="M4 19v2M20 19v2" />
-      </svg>
-    ),
-  },
-  {
-    id: 'rangefinder-camera',
-    title: 'Retro Rangefinder Camera',
-    shortName: 'Rangefinder Camera',
-    category: 'Photography · Design',
-    style: 'photorealistic',
-    prompt:
-      'Classic retro rangefinder film camera with brushed silver anodized aluminum top plate, textured black leather body, chunky multi-ring glass telephoto lens, and knurled metallic shutter dials',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" />
-        <circle cx="12" cy="13" r="3.5" />
+        <path d="M7 3h10l-1.5 11h-7L7 3Z" />
+        <path d="M17 6h2a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 19 12h-2" />
+        <rect x="6" y="14" width="12" height="7" rx="2" />
+        <circle cx="12" cy="17.5" r="1.3" />
       </svg>
     ),
   },
@@ -73,6 +59,22 @@ const VISUAL_PRESETS: VisualPreset[] = [
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 16.5v-3a2 2 0 0 1 2-2h2.5l3.5-4 2.5 2.5L17 12h2a2 2 0 0 1 2 2v2.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5Z" />
         <path d="M3 15h18" />
+      </svg>
+    ),
+  },
+  {
+    id: 'ps2-console',
+    title: 'PS2 Console & Controller',
+    shortName: 'PS2 & Controller',
+    category: 'Gaming · Retro',
+    style: 'photorealistic',
+    prompt:
+      'Iconic matte charcoal black stepped rectangular PlayStation 2 fat console standing upright on a royal blue vertical stand, deep parallel vertical ribbed ridges along the outer casing, disc tray bay, glowing green and blue power indicator dots, with a matte black DualShock 2 twin-stick controller resting in front',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="3" width="7" height="17" rx="1" />
+        <line x1="6.5" y1="6" x2="6.5" y2="17" />
+        <path d="M13 14.5a2 2 0 0 1 2-1.5h3a2 2 0 0 1 2 1.5l1 3.5a1.5 1.5 0 0 1-2.6 1.2L17.5 18h-2l-.9 1.2A1.5 1.5 0 0 1 12 18l1-3.5Z" />
       </svg>
     ),
   },
