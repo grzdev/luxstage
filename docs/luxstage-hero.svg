@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="100%" fill="none">
+  <defs>
+    <linearGradient id="heroBg" x1="0" y1="0" x2="960" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#050912" />
+      <stop offset="50%" stop-color="#0b1324" />
+      <stop offset="100%" stop-color="#060a14" />
+    </linearGradient>
+    <radialGradient id="stageGlow" cx="50%" cy="48%" r="42%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.22" />
+      <stop offset="55%" stop-color="#58ddba" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#050912" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58ddba" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <linearGradient id="scanSweep" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+      <stop offset="50%" stop-color="#58ddba" stop-opacity="0.65" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+    </linearGradient>
+    <clipPath id="heroClip">
+      <rect width="960" height="300" rx="16" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#heroClip)">
+    <rect width="960" height="300" fill="url(#heroBg)" />
+    <ellipse cx="480" cy="145" rx="340" ry="130" fill="url(#stageGlow)" />
+
+    <!-- Subtle Perspective Stage Floor Grid -->
+    <g stroke="#334155" stroke-opacity="0.28" stroke-width="1">
+      <line x1="120" y1="240" x2="840" y2="240" />
+      <line x1="80" y1="262" x2="880" y2="262" />
+      <line x1="40" y1="286" x2="920" y2="286" />
+      <line x1="480" y1="210" x2="480" y2="300" stroke="#38bdf8" stroke-opacity="0.25" />
+      <line x1="360" y1="215" x2="210" y2="300" />
+      <line x1="600" y1="215" x2="750" y2="300" />
+      <line x1="250" y1="222" x2="40" y2="295" />
+      <line x1="710" y1="222" x2="920" y2="295" />
+    </g>
+
+    <!-- Rotating Orbital Ring -->
+    <g transform="translate(480 132)">
+      <ellipse rx="112" ry="34" stroke="url(#accentGrad)" stroke-opacity="0.35" stroke-width="1.2" stroke-dasharray="6 6">
+        <animateTransform attributeName="transform" type="rotate" from="-8" to="-8" dur="10s" />
+        <animate attributeName="stroke-dashoffset" values="0;-48" dur="5s" repeatCount="indefinite" />
+      </ellipse>
+      <circle cx="0" cy="0" r="88" stroke="#38bdf8" stroke-opacity="0.16" stroke-width="1" stroke-dasharray="3 9">
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="36s" repeatCount="indefinite" />
+      </circle>
+    </g>
+
+    <!-- Levitating Isometric 3D Artifact -->
+    <g transform="translate(480 128)">
+      <g>
+        <animateTransform attributeName="transform" type="translate" values="0 -5; 0 5; 0 -5" dur="4.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" />
+        <!-- Isometric Hexagonal Core -->
+        <polygon points="0,-54 48,-27 48,27 0,54 -48,27 -48,-27" fill="#0f172a" fill-opacity="0.72" stroke="url(#accentGrad)" stroke-width="1.8" />
+        <line x1="0" y1="-54" x2="0" y2="0" stroke="#58ddba" stroke-opacity="0.55" stroke-width="1.2" />
+        <line x1="48" y1="-27" x2="0" y2="0" stroke="#38bdf8" stroke-opacity="0.55" stroke-width="1.2" />
+        <line x1="-48" y1="-27" x2="0" y2="0" stroke="#38bdf8" stroke-opacity="0.55" stroke-width="1.2" />
+        <line x1="0" y1="0" x2="0" y2="54" stroke="#38bdf8" stroke-opacity="0.8" stroke-width="1.4" />
+        <!-- Inner Floating Facet -->
+        <polygon points="0,-24 22,-11 22,13 0,26 -22,13 -22,-11" fill="#38bdf8" fill-opacity="0.12" stroke="#58ddba" stroke-width="1.2">
+          <animate attributeName="fill-opacity" values="0.09;0.24;0.09" dur="3.6s" repeatCount="indefinite" />
+        </polygon>
+        <!-- Cross-Section Laser Scan Line -->
+        <rect x="-56" y="-2" width="112" height="2.5" rx="1.2" fill="url(#scanSweep)">
+          <animateTransform attributeName="transform" type="translate" values="0 -38; 0 38; 0 -38" dur="4.2s" repeatCount="indefinite" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" />
+        </rect>
+      </g>
+    </g>
+
+    <!-- Top-Left Telemetry Badge: Aholo Lux3D -->
+    <g transform="translate(36 38)">
+      <rect width="236" height="62" rx="12" fill="#0f172a" fill-opacity="0.88" stroke="#1e293b" stroke-width="1.2" />
+      <circle cx="22" cy="22" r="4" fill="#58ddba">
+        <animate attributeName="opacity" values="1;0.35;1" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <text x="34" y="26" fill="#58ddba" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="700" letter-spacing="0.8">AHOLO LUX3D API</text>
+      <text x="18" y="46" fill="#cbd5e1" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5">Text-to-3D · Image-to-3D · G1-Turbo</text>
+    </g>
+
+    <!-- Bottom-Left Telemetry Badge: Material Lab -->
+    <g transform="translate(36 120)">
+      <rect width="236" height="62" rx="12" fill="#0f172a" fill-opacity="0.88" stroke="#1e293b" stroke-width="1.2" />
+      <circle cx="22" cy="22" r="4" fill="#38bdf8" />
+      <text x="34" y="26" fill="#38bdf8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="700" letter-spacing="0.8">MATERIAL &amp; SURFACE LAB</text>
+      <text x="18" y="46" fill="#cbd5e1" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5">6 Shaders · Translucent Glass · PBR</text>
+    </g>
+
+    <!-- Top-Right Telemetry Badge: Semantic Part Split -->
+    <g transform="translate(688 38)">
+      <rect width="236" height="62" rx="12" fill="#0f172a" fill-opacity="0.88" stroke="#1e293b" stroke-width="1.2" />
+      <circle cx="22" cy="22" r="4" fill="#38bdf8">
+        <animate attributeName="opacity" values="1;0.4;1" dur="2.4s" repeatCount="indefinite" />
+      </circle>
+      <text x="34" y="26" fill="#38bdf8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="700" letter-spacing="0.8">SEMANTIC PART SPLIT</text>
+      <text x="18" y="46" fill="#cbd5e1" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5">Blender · Drone · Headphones · Quad Bot</text>
+    </g>
+
+    <!-- Bottom-Right Telemetry Badge: Interactive Rigs -->
+    <g transform="translate(688 120)">
+      <rect width="236" height="62" rx="12" fill="#0f172a" fill-opacity="0.88" stroke="#1e293b" stroke-width="1.2" />
+      <circle cx="22" cy="22" r="4" fill="#f59e0b" />
+      <text x="34" y="26" fill="#fbbf24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="700" letter-spacing="0.8">60FPS STAGE &amp; EXPORT</text>
+      <text x="18" y="46" fill="#cbd5e1" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5">Spotlight · Gimbal · Slicer · GLB / R3F</text>
+    </g>
+
+    <!-- Bottom Center Title Plate -->
+    <g transform="translate(290 218)">
+      <rect width="380" height="58" rx="14" fill="#090f1d" fill-opacity="0.92" stroke="url(#accentGrad)" stroke-opacity="0.45" stroke-width="1.2" />
+      <text x="190" y="27" text-anchor="middle" fill="#f8fafc" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="20" font-weight="800" letter-spacing="1.4">✦ LUXSTAGE</text>
+      <text x="190" y="45" text-anchor="middle" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10.5" letter-spacing="1.1">GENERATIVE 3D PLAYGROUND FOR AHOLO LUX3D</text>
+    </g>
+
+    <rect x="0.75" y="0.75" width="958.5" height="298.5" rx="15.25" stroke="#1e293b" stroke-width="1.5" />
+  </g>
+</svg>

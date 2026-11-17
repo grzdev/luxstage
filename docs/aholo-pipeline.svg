@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 176" width="100%" fill="none">
+  <defs>
+    <linearGradient id="pipeBg" x1="0" y1="0" x2="960" y2="176" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#060b16" />
+      <stop offset="100%" stop-color="#0b1324" />
+    </linearGradient>
+    <linearGradient id="pipeLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#58ddba" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+  </defs>
+
+  <rect width="960" height="176" rx="14" fill="url(#pipeBg)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Connecting Conduits -->
+  <line x1="226" y1="88" x2="258" y2="88" stroke="#334155" stroke-width="2" stroke-dasharray="4 4" />
+  <line x1="464" y1="88" x2="496" y2="88" stroke="#334155" stroke-width="2" stroke-dasharray="4 4" />
+  <line x1="702" y1="88" x2="734" y2="88" stroke="#334155" stroke-width="2" stroke-dasharray="4 4" />
+
+  <!-- Subtle Data Packets Moving Across Pipeline -->
+  <circle cy="88" r="3.5" fill="#58ddba">
+    <animate attributeName="cx" values="226;258;226" dur="1.8s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.3;1;0.3" dur="1.8s" repeatCount="indefinite" />
+  </circle>
+  <circle cy="88" r="3.5" fill="#38bdf8">
+    <animate attributeName="cx" values="464;496;464" dur="1.8s" begin="0.45s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.3;1;0.3" dur="1.8s" begin="0.45s" repeatCount="indefinite" />
+  </circle>
+  <circle cy="88" r="3.5" fill="#fbbf24">
+    <animate attributeName="cx" values="702;734;702" dur="1.8s" begin="0.9s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.3;1;0.3" dur="1.8s" begin="0.9s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Node 1: Studio Input -->
+  <g transform="translate(20 26)">
+    <rect width="206" height="124" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1.2" />
+    <text x="16" y="28" fill="#58ddba" font-family="ui-monospace, Menlo, monospace" font-size="10.5" font-weight="700">01 · STUDIO INPUT</text>
+    <text x="16" y="54" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="14" font-weight="700">Prompt · Sketch · Preset</text>
+    <text x="16" y="78" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">4 Visual Hero Presets</text>
+    <text x="16" y="96" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">7 Style Chips · 50k–300k</text>
+  </g>
+
+  <!-- Node 2: Region & BYOK Proxy -->
+  <g transform="translate(258 26)">
+    <rect width="206" height="124" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1.2" />
+    <text x="16" y="28" fill="#38bdf8" font-family="ui-monospace, Menlo, monospace" font-size="10.5" font-weight="700">02 · SECURE GATEWAY</text>
+    <text x="16" y="54" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="14" font-weight="700">/api/aholo/* Proxy</text>
+    <text x="16" y="78" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">Netlify Functions + Vite</text>
+    <text x="16" y="96" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">Intl / CN + Custom BYOK</text>
+  </g>
+
+  <!-- Node 3: Aholo Lux3D Cloud -->
+  <g transform="translate(496 26)">
+    <rect width="206" height="124" rx="12" fill="#0f172a" stroke="#38bdf8" stroke-opacity="0.5" stroke-width="1.3">
+      <animate attributeName="stroke-opacity" values="0.35;0.85;0.35" dur="3s" repeatCount="indefinite" />
+    </rect>
+    <text x="16" y="28" fill="#38bdf8" font-family="ui-monospace, Menlo, monospace" font-size="10.5" font-weight="700">03 · AHOLO LUX3D</text>
+    <text x="16" y="54" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="14" font-weight="700">G1-Turbo / G1 Engine</text>
+    <text x="16" y="78" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">/text-to-3d &amp; /img-to-3d</text>
+    <text x="16" y="96" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">Live 4-Stage Task Polling</text>
+  </g>
+
+  <!-- Node 4: GLB Proxy & 3D Stage -->
+  <g transform="translate(734 26)">
+    <rect width="206" height="124" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1.2" />
+    <text x="16" y="28" fill="#fbbf24" font-family="ui-monospace, Menlo, monospace" font-size="10.5" font-weight="700">04 · CORS PROXY &amp; STAGE</text>
+    <text x="16" y="54" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="14" font-weight="700">/api/glb-proxy · WebGL</text>
+    <text x="16" y="78" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">1024px VRAM Optimizer</text>
+    <text x="16" y="96" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">Staged Library + .GLB Save</text>
+  </g>
+</svg>

@@ -1,113 +1,123 @@
 <div align="center">
 
+<img src="./docs/luxstage-hero.svg" alt="LuxStage — Generative 3D Playground for Aholo Lux3D" width="100%" />
+
+<br />
+
 # ✦ LuxStage
 
-**The Interactive Generative 3D Playground & Staging Toolkit for Aholo Lux3D**  
+**Interactive Generative 3D Playground & Staging Studio for Manycore Aholo Lux3D**  
 *Built for the Manycore Aholo Global 3D AI Hackathon*
 
-[![Manycore Aholo 3D AI Hackathon](https://img.shields.io/badge/Aholo_Global_3D_AI-Hackathon_2026-38bdf8?style=for-the-badge&labelColor=070b14)](https://www.aholo.ai/hackathon)
-[![React Three Fiber](https://img.shields.io/badge/React_Three_Fiber-v8-58ddba?style=for-the-badge&labelColor=070b14)](https://github.com/pmndrs/react-three-fiber)
-[![Three.js](https://img.shields.io/badge/Three.js-0.167-f8fafc?style=for-the-badge&labelColor=070b14)](https://threejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge&labelColor=070b14)](./LICENSE)
+[![Aholo Hackathon](https://img.shields.io/badge/Aholo_Global_3D_AI-Hackathon_2026-38bdf8?style=for-the-badge&labelColor=070b14)](https://www.aholo.ai/hackathon)
+[![Live Playground](https://img.shields.io/badge/▶_Live_Site-Add_Netlify_URL-58ddba?style=for-the-badge&labelColor=070b14)](#live-links--demo)
+[![Demo Video](https://img.shields.io/badge/🎬_Demo_Video-Coming_Soon-f59e0b?style=for-the-badge&labelColor=070b14)](#live-links--demo)
+[![React Three Fiber](https://img.shields.io/badge/React_Three_Fiber-v8-94a3b8?style=for-the-badge&labelColor=070b14)](https://github.com/pmndrs/react-three-fiber)
+[![License: MIT](https://img.shields.io/badge/License-MIT-e2e8f0?style=for-the-badge&labelColor=070b14)](./LICENSE)
 
 <p align="center">
-  <b>Generate textured PBR 3D assets from text prompts or 2D reference images via Aholo Lux3D · Inspect shaders &amp; topology in the Material Lab · Disassemble single-mesh AI models into 10 spatial parts · Test scale &amp; Zero-G physics · Sweep darkroom spotlights · Export ready-to-run React Three Fiber code.</b>
+  <b>Generate PBR 3D assets from text prompts or 2D sketches with Aholo Lux3D · Inspect shaders &amp; topology · Disassemble meshes along real functional parts · Test Zero-G physics &amp; spotlights · Export React Three Fiber code &amp; <code>.glb</code> assets.</b>
 </p>
 
 </div>
 
 ---
 
-## 🎮 What is LuxStage?
+## 🌐 Live Links & Demo
 
-Most 3D AI generators stop the moment a `.glb` file is produced—leaving creators, robotics engineers, and web developers to manually inspect topology, test lighting, verify real-world scale, and write boilerplate Three.js code.
-
-**LuxStage** turns **Aholo Lux3D** into an end-to-end interactive 3D staging & inspection studio on the web:
-1. **Text-to-3D & Image-to-3D Synthesis:** Enter a custom prompt, pick a curated 1-click preset (Embodied Robotics, Interior & Furniture, Product Design, Footwear), or drop a 2D reference image to synthesize a textured `.glb` asset with **Aholo Lux3D (`G1-Turbo` / `G1`)**.
-2. **Aholo Material & Surface Lab:** Switch live between **Aholo PBR**, **Topology X-Ray Wireframe**, **Studio Clay**, **Liquid Chrome**, **Cyber Hologram**, and **Frosted Acrylic**, with real-time **Roughness** and **Metallic Sheen** sliders plus a **Topology Wireframe Overlay**.
-3. **AI Part Split & 3D Explode:** Even single-mesh AI `.glb` models are automatically partitioned into **10 seamless 3D spatial sub-parts** sharing the original vertex/normal/UV buffers—giving zero visible seam at `0%` and smooth 60fps radial disassembly with 3D vector lines and clickable part isolation.
-4. **Spatial Scale Cage & Zero-G Drop Physics:** Surround any generated asset with a **3D Holographic CAD Dimension Cage (`W × H × D` in meters)**, inspect live **Mesh Telemetry** (Triangles, Vertices, Sub-Parts, Footprint), levitate in **Zero-G Float**, or trigger a **Newtonian Gravity Drop Test** with floor shockwave rings.
-5. **Tactile Rigs & Studio Showcase:** Sweep a **360° Clockwise Darkroom Spotlight**, track the flying 3D asset in the **Fighter-Jet Flight Gimbal**, slice cross-sections along **X / Y / Z axes**, customize studio backdrops, capture **Full-Res PNG Snapshots**, and copy **React Three Fiber (`<Canvas>`)** code in 1 click.
-
----
-
-## 🕹️ The 7 Interactive 3D Viewport Tools
-
-| Tool | Highlights |
+| Resource | Link |
 | :--- | :--- |
-| **✦ Material Lab** | 6 live surface shader modes (`Aholo PBR`, `Topology X-Ray`, `Studio Clay`, `Liquid Chrome`, `Cyber Hologram`, `Frosted Acrylic`), `Topology Wireframe Overlay`, and live `Roughness` & `Metalness` controls. |
-| **🔦 Spotlight Rig** | Pitch-black darkroom inspection with a tactile **360° Clockwise Orbit Dial**, **Beam Intensity Lever**, and **Spotlight Height Lever**. |
-| **🎯 Flight Gimbal** | 2-Axis physical flight joystick steering a fighter-jet camera turret to track and missile-lock your generated 3D model in real time at 60fps. |
-| **📐 Spatial Rig** | **3D Holographic Dimension Cage (`W × H × D`)**, live **4-Card Mesh Telemetry**, `0.4x–1.8x` Scale Multiplier, **Zero-G Anti-Gravity Float**, **Gravity Drop Test**, and 1-click **R3F Code / `.glb` Export**. |
-| **🧩 Part Split** | Automatic **10-Zone Spatial Mesh Segmentation** for AI models, **Radial Explode Lever**, **Auto-Pulse Explode** breathing mode, **3D Vector Connector Lines**, and clickable part focus chips. |
-| **🎨 Studio Mode** | Lighting environment presets (`Showroom`, `Blueprint`, `Cyberpunk`, `Warm Clay`), custom hex backdrop swatches, and **Studio Snapshot PNG capture**. |
-| **✂️ Section Slicer** | Real-time WebGL clipping plane across `Z (Top-Down)`, `X (Side-to-Side)`, and `Y (Front-Back)` axes to inspect internal mesh structure. |
+| **Live Web App** | *Paste deployed Netlify URL here* |
+| **Demo Walkthrough Video** | *Video link coming soon* |
+| **Source Repository** | [github.com/grzdev/luxstage](https://github.com/grzdev/luxstage) |
 
 ---
 
-## ⚡ Architecture & Tech Stack
+## ✦ What LuxStage Does
+
+Most text-to-3D tools stop the moment a `.glb` file finishes downloading. **LuxStage** wraps **Aholo Lux3D** inside a full interactive 60fps WebGL darkroom so creators, designers, and developers can generate a 3D asset and immediately stress-test, inspect, disassemble, light, slice, and export it—all inside a responsive desktop & mobile browser.
+
+---
+
+## ⚡ Every Aholo Integration Used
+
+<div align="center">
+  <img src="./docs/aholo-pipeline.svg" alt="End-to-End Aholo Lux3D Pipeline in LuxStage" width="100%" />
+</div>
+
+<br />
+
+| Integration Layer | What It Powers | Implementation |
+| :--- | :--- | :--- |
+| **Text-to-3D & Image-to-3D Cloud API** | Calls `/global/lux3d/v1/generate/text-to-3d/task/create` (with optional reference `img`) and `/generate/img-to-3d/task/create`, supporting **`G1-Turbo`** and **`G1` (HD)** engines, `50k–300k` target polygon slider, and **7 Aholo styles** (`Photorealistic`, `Cyberpunk`, `Fantasy`, `Cartoon`, `Anime`, `Hand Painted`, `Glass`). | [`src/services/aholo.ts`](src/services/aholo.ts)<br/>[`src/components/generation/GenerationStudio.tsx`](src/components/generation/GenerationStudio.tsx) |
+| **Real-Time Task Polling & Pipeline UI** | Polls `/generate/task/get?taskid=...` and maps cloud generation status (`0` queued → `1` processing → `3` success) into a 4-stage live progress interface (*Connecting → Sculpting Geometry → Baking PBR → Mounting GLB*). | [`src/hooks/useAholoGeneration.ts`](src/hooks/useAholoGeneration.ts) |
+| **Curated Visual Presets & Glass Tuning** | One-click tuned prompts (**Kitchen Blender**, **Concept Sneaker**, **Tactical Drone**, **White Headphones**) plus automatic translucent frosted-glass shader treatment on glass pitcher geometry. | [`src/components/generation/GenerationStudio.tsx`](src/components/generation/GenerationStudio.tsx)<br/>[`src/spatialkit/SelectableModel.tsx`](src/spatialkit/SelectableModel.tsx) |
+| **Dual-Region Proxy & BYOK Override** | Proxies `/api/aholo/*` across **International** (`api.aholo.ai/global/lux3d/v1`) and **China** (`api.aholo3d.cn/lux3d/v1`) via `X-Aholo-Region`. Visitors can use the hosted server key (`/api/aholo/key-status`) or override it in **⚙ API Key** (`X-Aholo-Key`, stored in `localStorage`). | [`netlify/functions/aholo.mjs`](netlify/functions/aholo.mjs)<br/>[`vite.config.ts`](vite.config.ts)<br/>[`src/components/SettingsModal.tsx`](src/components/SettingsModal.tsx) |
+| **Cross-Origin GLB Streaming & Export** | `/api/glb-proxy` streams remote Aholo CDN `.glb` binaries with clean CORS headers for WebGL rendering, paired with bottom-left **Download GLB** and per-card `.glb` downloads. | [`netlify/functions/glb-proxy.mjs`](netlify/functions/glb-proxy.mjs)<br/>[`src/model-files.ts`](src/model-files.ts) |
+| **Browser Staged Library & Gzip Loader** | Separates **Your Generated Models** (saved locally in `localStorage` with load, download & remove controls) from zero-credit **Starter Showcase Presets** (`Quadruped Robotic Dog` streamed via `robot-dog.glb.gz` + `Tactical Sci-Fi Helmet`). | [`src/services/aholo.ts`](src/services/aholo.ts)<br/>[`src/spatialkit/SelectableModel.tsx`](src/spatialkit/SelectableModel.tsx) |
+| **Aholo SDK & Cloud Task Wrappers** | Ships `@manycore/aholo-sdk-lux3d`, `@manycore/aholo-sdk-core`, and `@manycore/aholo-sdk-asset` dependencies alongside typed `/part-split/task/create` and `/articulation-animation/task/create` helpers for cloud geometry workflows. | [`package.json`](package.json)<br/>[`src/services/aholo.ts`](src/services/aholo.ts) |
+
+---
+
+## 🕹️ The 7 Interactive Stage Tools
+
+<div align="center">
+  <img src="./docs/luxstage-rigs.svg" alt="LuxStage Interactive Viewport Rigs" width="100%" />
+</div>
+
+<br />
+
+| Tool | What You Can Do |
+| :--- | :--- |
+| **✦ Material Lab** | Flip generated PBR assets across **6 live shader modes** (`Aholo PBR`, `Topology X-Ray`, `Studio Clay`, `Liquid Chrome`, `Cyber Hologram`, `Frosted Acrylic`), toggle a wireframe topology overlay, and slide roughness & metalness in real time. |
+| **🔦 Spotlight** | Drop the stage into a darkroom and sweep a **360° clockwise orbit dial** alongside mechanical **brightness** and **height** levers to inspect silhouettes, surface normals, and reflections. |
+| **🎯 Gimbal** | Put your generated model into autonomous 3D flight and steer a fighter-jet targeting reticle using a **2-axis tactile joystick** to achieve 60fps missile lock (`● TARGET LOCKED`). |
+| **📐 Spatial Rig** | Wrap the asset in a **3D CAD dimension cage (`W × H × D`)**, inspect live triangle/vertex telemetry, adjust `0.4×–1.8×` scale, trigger **Zero-G Float** or a **Newtonian Gravity Drop Test**, download `.glb`, or copy **React Three Fiber** code. |
+| **🧩 Part Split** | Zero-latency anatomy-aware semantic segmentation built for single-shell AI meshes: separates **Blender** (lid, glass jug, handle, collar, dial, base), **Drone** (4 blades, 4 motor arms, fuselage, gimbal), **Headphones** (headband, hinges, inner foam cushions, outer housings), **Sneaker**, and **Quad Bot** (with 10-zone fallback for any custom `.glb`). |
+| **🎨 Studio** | Switch lighting environments (`Showroom`, `Blueprint`, `Cyberpunk`, `Warm Clay`), pick custom backdrop colors, and capture studio PNG snapshots. |
+| **✂️ Slicer** | Slice real-time WebGL clipping planes across **`Z`**, **`X`**, and **`Y`** axes to inspect interior topology and wall thickness. |
+
+---
+
+## 🧱 Architecture
 
 ```text
-LuxStage Client (React 18 + TypeScript + React Three Fiber + Three.js)
-   │
-   ├── Aholo Lux3D Generative Studio Modal
-   │      ├── Text-to-3D Synthesizer + Style Presets + Visual Prompt Cards
-   │      ├── 2D Image / Sketch-to-3D Reconstruction Dropzone
-   │      ├── Live 4-Stage Synthesis Pipeline Visualizer
-   │      └── Session Asset Library (Instant Model Switching)
-   │
-   ├── Vite Secure Proxy (/api/aholo/* & /api/glb-proxy)
-   │      └── Bearer Token Injection & Cross-Origin GLB Streaming
-   │
-   └── SpatialKit 3D Engine & Aholo Viewport Tools
-          ├── Automatic Texture & Geometry Optimizer (60fps WebGL)
-          ├── 10-Zone Zero-Seam Spatial Mesh Segmenter (Part Split)
-          ├── Live PBR / X-Ray / Clay / Chrome / Hologram Shader Override
-          └── 3D CAD Dimension Cage & Newtonian Drop-Test Physics Rig
+LuxStage (React 18 · TypeScript · React Three Fiber · Three.js)
+├── src/components/generation/   # Text/Image-to-3D Studio, Presets & Staged Library
+├── src/services/aholo.ts        # Lux3D task create/poll, BYOK auth & storage persistence
+├── src/hooks/useAholoGeneration.ts
+├── src/spatialkit/              # Model optimizer, semantic Part Split, PBR shaders & rigs
+├── netlify/functions/           # Serverless /api/aholo/* & /api/glb-proxy CORS relays
+└── vite.config.ts               # Local dev middleware matching production routes
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Clone & Install
 ```bash
 git clone https://github.com/grzdev/luxstage.git
 cd luxstage
 npm install
 ```
 
-### 2. Configure Aholo API Key
-Get your API key from the [Aholo Open Platform](https://www.aholo.ai/).
+Create `.env.local` in the project root (or enter your key directly in the top-bar **⚙ API Key** dialog at runtime):
 
-Create `.env.local` in the project root:
 ```env
 VITE_AHOLO_API_KEY=your_aholo_api_key_here
-VITE_AHOLO_REGION=intl
 ```
 
-*(You can also paste your API key directly in the UI via the **⚙ API Key** button in the top navigation bar—it is stored locally in your browser's `localStorage` and never committed to git).*
+Run locally or build for production / Netlify:
 
-### 3. Start Development Server
 ```bash
-npm run dev
+npm run dev      # Starts Vite on http://localhost:5174
+npm run build    # Typechecks and builds production bundle into dist/
 ```
 
-### 4. Build for Production
-```bash
-npm run build
-npm run preview
-```
-
----
-
-## 🏆 Manycore Aholo Global 3D AI Hackathon Submission
-
-* **Project Title:** LuxStage
-* **Track:** 3D Generation & Spatial Intelligence / Interactive Web Applications
-* **Core Technology:** Manycore Aholo Lux3D API (`text_to_3d` & `image_to_3d`, `G1-Turbo` & `G1`), React 18, React Three Fiber, Three.js
+For **Netlify**, `netlify.toml` auto-configures builds and serverless API redirects—add `AHOLO_API_KEY` (or `VITE_AHOLO_API_KEY`) under **Site configuration → Environment variables**.
 
 ---
 
 ## 📄 License
+
 MIT © 2026
