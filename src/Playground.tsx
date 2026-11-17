@@ -1470,6 +1470,7 @@ export function Playground({
                       onReady={() => setStageReady(true)}
                       clippingPlanes={clippingPlanes}
                       modelId={model.id}
+                      modelName={model.name}
                       fit={MODEL_FIT}
                       onSurfaceClick={handleSurfaceClick}
                     />

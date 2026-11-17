@@ -7,6 +7,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DoubleSide,
   LoopOnce,
   Mesh,
   Plane,
@@ -14,6 +15,7 @@ import {
   type AnimationClip,
   type MeshStandardMaterial,
   type Object3D,
+  type Side,
   type Texture,
 } from 'three';
 import { createModelInstance, modelFit, type SpatialPart } from './model';
@@ -43,6 +45,8 @@ export interface SelectableModelProps {
   src: string;
   /** Defaults to src. Supply a stable id when saving annotations or mounting a model twice. */
   modelId?: string;
+  /** Optional display name used for semantic material enhancements (e.g. glass blender jug). */
+  modelName?: string;
   position?: [number, number, number];
   rotation?: [number, number, number];
   scale?: number | [number, number, number];
@@ -246,12 +250,15 @@ interface SavedMaterialState {
   wireframe: boolean;
   transparent: boolean;
   opacity: number;
+  depthWrite: boolean;
+  side: Side;
 }
 
 /** Use an already loaded object. Its source geometry/textures remain owned by the caller. */
 export function SelectableObject({
   object,
   modelId,
+  modelName,
   animations = [],
   animation = 0,
   animationProgress,
@@ -269,7 +276,7 @@ export function SelectableObject({
   highlightColor = '#58ddba',
   onSurfaceClick,
 }: SelectableObjectProps) {
-  const instance = useMemo(() => createModelInstance(object, modelId), [object, modelId]);
+  const instance = useMemo(() => createModelInstance(object, modelId, modelName), [object, modelId, modelName]);
   const framing = useMemo(() => fit === undefined ? { scale: 1, position: [0, 0, 0] as [number, number, number] } : modelFit(object, fit), [object, fit]);
   const { register, select, selectedPart } = useSpatialContext();
   useEffect(() => register(modelId, instance.records), [register, modelId, instance]);
@@ -441,10 +448,13 @@ export function SelectableObject({
             wireframe: Boolean(mat.wireframe),
             transparent: Boolean(mat.transparent),
             opacity: mat.opacity ?? 1,
+            depthWrite: mat.depthWrite ?? true,
+            side: mat.side,
           } satisfies SavedMaterialState;
         }
 
         const saved = mat.userData._skSavedPBR as SavedMaterialState;
+        const isGlassZone = Boolean(mesh.userData?._skGlassZone);
         const cfg = materialConfig ?? {
           mode: 'pbr',
           roughness: 0.45,
@@ -453,18 +463,37 @@ export function SelectableObject({
         };
 
         if (cfg.mode === 'pbr') {
-          if (mat.color) mat.color.copy(saved.color);
-          if (mat.emissive) mat.emissive.copy(saved.emissive);
-          mat.emissiveIntensity = saved.emissiveIntensity;
-          mat.map = saved.map;
-          mat.emissiveMap = saved.emissiveMap;
-          mat.roughnessMap = saved.roughnessMap;
-          mat.metalnessMap = saved.metalnessMap;
-          mat.roughness = cfg.roughness;
-          mat.metalness = cfg.metalness;
-          mat.transparent = saved.transparent;
-          mat.opacity = saved.opacity;
-          mat.wireframe = Boolean(cfg.wireframeOverlay);
+          if (isGlassZone) {
+            if (mat.color) mat.color.set('#dff2ff');
+            if (mat.emissive) mat.emissive.set('#38bdf8');
+            mat.emissiveIntensity = 0.08;
+            mat.map = saved.map;
+            mat.emissiveMap = null;
+            mat.roughnessMap = saved.roughnessMap;
+            mat.metalnessMap = saved.metalnessMap;
+            mat.roughness = Math.min(0.22, cfg.roughness * 0.42);
+            mat.metalness = 0.1;
+            mat.transparent = true;
+            mat.opacity = 0.46;
+            mat.depthWrite = false;
+            mat.side = DoubleSide;
+            mat.wireframe = Boolean(cfg.wireframeOverlay);
+          } else {
+            if (mat.color) mat.color.copy(saved.color);
+            if (mat.emissive) mat.emissive.copy(saved.emissive);
+            mat.emissiveIntensity = saved.emissiveIntensity;
+            mat.map = saved.map;
+            mat.emissiveMap = saved.emissiveMap;
+            mat.roughnessMap = saved.roughnessMap;
+            mat.metalnessMap = saved.metalnessMap;
+            mat.roughness = cfg.roughness;
+            mat.metalness = cfg.metalness;
+            mat.transparent = saved.transparent;
+            mat.opacity = saved.opacity;
+            mat.depthWrite = saved.depthWrite;
+            mat.side = saved.side;
+            mat.wireframe = Boolean(cfg.wireframeOverlay);
+          }
         } else if (cfg.mode === 'wireframe') {
           if (mat.color) mat.color.set('#38bdf8');
           if (mat.emissive) mat.emissive.set('#0284c7');
@@ -477,6 +506,8 @@ export function SelectableObject({
           mat.metalness = 0.8;
           mat.transparent = false;
           mat.opacity = 1;
+          mat.depthWrite = true;
+          mat.side = saved.side;
           mat.wireframe = true;
         } else if (cfg.mode === 'clay') {
           if (mat.color) mat.color.set('#d8dee9');
@@ -490,6 +521,8 @@ export function SelectableObject({
           mat.metalness = 0.06;
           mat.transparent = false;
           mat.opacity = 1;
+          mat.depthWrite = true;
+          mat.side = saved.side;
           mat.wireframe = Boolean(cfg.wireframeOverlay);
         } else if (cfg.mode === 'chrome') {
           if (mat.color) mat.color.set('#f1f5f9');
@@ -503,6 +536,8 @@ export function SelectableObject({
           mat.metalness = 0.96;
           mat.transparent = false;
           mat.opacity = 1;
+          mat.depthWrite = true;
+          mat.side = saved.side;
           mat.wireframe = Boolean(cfg.wireframeOverlay);
         } else if (cfg.mode === 'hologram') {
           if (mat.color) mat.color.set('#38bdf8');
@@ -514,6 +549,8 @@ export function SelectableObject({
           mat.metalness = 0.85;
           mat.transparent = true;
           mat.opacity = 0.64;
+          mat.depthWrite = false;
+          mat.side = DoubleSide;
           mat.wireframe = Boolean(cfg.wireframeOverlay);
         } else if (cfg.mode === 'glass') {
           if (mat.color) mat.color.set('#e0f2fe');
@@ -527,6 +564,8 @@ export function SelectableObject({
           mat.metalness = 0.15;
           mat.transparent = true;
           mat.opacity = 0.56;
+          mat.depthWrite = false;
+          mat.side = DoubleSide;
           mat.wireframe = Boolean(cfg.wireframeOverlay);
         }
 

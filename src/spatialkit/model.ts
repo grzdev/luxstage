@@ -31,6 +31,7 @@ interface CachedSubPart {
   name: string;
   geometry: BufferGeometry;
   localCenter: Vector3;
+  isGlass?: boolean;
 }
 
 const STRUCTURAL_ZONES: ReadonlyArray<{ name: string; u: [number, number, number] }> = [
@@ -46,14 +47,28 @@ const STRUCTURAL_ZONES: ReadonlyArray<{ name: string; u: [number, number, number
   { name: 'Rear_Starboard_Strut', u: [0.76, 0.18, 0.22] },
 ];
 
+const BLENDER_ZONES: ReadonlyArray<{ name: string; isGlass: boolean; u: [number, number, number] }> = [
+  { name: 'Sealed_Top_Lid', isGlass: false, u: [0.5, 0.92, 0.5] },
+  { name: 'Glass_Pitcher_Front', isGlass: true, u: [0.5, 0.61, 0.78] },
+  { name: 'Glass_Pitcher_Rear', isGlass: true, u: [0.5, 0.61, 0.22] },
+  { name: 'Glass_Pitcher_Left', isGlass: true, u: [0.22, 0.61, 0.5] },
+  { name: 'Glass_Pitcher_Right', isGlass: true, u: [0.82, 0.61, 0.5] },
+  { name: 'Blade_Collar_Seal', isGlass: false, u: [0.5, 0.31, 0.5] },
+  { name: 'Steel_Base_Front', isGlass: false, u: [0.5, 0.16, 0.82] },
+  { name: 'Steel_Base_Rear', isGlass: false, u: [0.5, 0.16, 0.18] },
+  { name: 'Steel_Base_Left', isGlass: false, u: [0.18, 0.16, 0.5] },
+  { name: 'Steel_Base_Right', isGlass: false, u: [0.82, 0.16, 0.5] },
+];
+
 /**
  * Partition a single-mesh AI model into 10 seamless spatial sub-meshes sharing the original
  * vertex/normal/UV buffers so that 0% explode has zero visible seams while >0% explode
  * radially separates the model into interactive 3D structural sub-parts.
  */
-function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
-  if (geo.userData?._skSegmentedParts) {
-    return geo.userData._skSegmentedParts as CachedSubPart[];
+function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): CachedSubPart[] | null {
+  const cacheKey = isBlender ? '_skSegmentedPartsBlender' : '_skSegmentedParts';
+  if (geo.userData?.[cacheKey]) {
+    return geo.userData[cacheKey] as CachedSubPart[];
   }
   const posAttr = geo.attributes.position;
   if (!posAttr || posAttr.count < 36) return null;
@@ -71,12 +86,13 @@ function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
   const triCount = indexAttr ? Math.floor(indexAttr.count / 3) : Math.floor(posAttr.count / 3);
   if (triCount < 12) return null;
 
-  const zoneCount = STRUCTURAL_ZONES.length;
+  const activeZones = isBlender ? BLENDER_ZONES : STRUCTURAL_ZONES;
+  const zoneCount = activeZones.length;
   const zoneU = new Float64Array(zoneCount * 3);
   for (let z = 0; z < zoneCount; z++) {
-    zoneU[z * 3] = STRUCTURAL_ZONES[z].u[0];
-    zoneU[z * 3 + 1] = STRUCTURAL_ZONES[z].u[1];
-    zoneU[z * 3 + 2] = STRUCTURAL_ZONES[z].u[2];
+    zoneU[z * 3] = activeZones[z].u[0];
+    zoneU[z * 3 + 1] = activeZones[z].u[1];
+    zoneU[z * 3 + 2] = activeZones[z].u[2];
   }
 
   const triZones = new Uint8Array(triCount);
@@ -121,15 +137,32 @@ function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
 
     let bestZone = 0;
     let bestDistSq = Infinity;
-    for (let z = 0; z < zoneCount; z++) {
-      const zu = z * 3;
-      const dx = nx - zoneU[zu];
-      const dy = ny - zoneU[zu + 1];
-      const dz = nz - zoneU[zu + 2];
-      const dSq = dx * dx + dy * dy + dz * dz;
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq;
-        bestZone = z;
+    if (isBlender) {
+      // Respect crisp horizontal material boundaries between Lid (ny >= 0.855), Glass Jug (0.36..0.855), and Steel Base (ny < 0.36)
+      const startZ = ny >= 0.855 ? 0 : ny >= 0.36 ? 1 : 5;
+      const endZ = ny >= 0.855 ? 1 : ny >= 0.36 ? 5 : zoneCount;
+      for (let z = startZ; z < endZ; z++) {
+        const zu = z * 3;
+        const dx = nx - zoneU[zu];
+        const dy = ny - zoneU[zu + 1];
+        const dz = nz - zoneU[zu + 2];
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          bestZone = z;
+        }
+      }
+    } else {
+      for (let z = 0; z < zoneCount; z++) {
+        const zu = z * 3;
+        const dx = nx - zoneU[zu];
+        const dy = ny - zoneU[zu + 1];
+        const dz = nz - zoneU[zu + 2];
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          bestZone = z;
+        }
       }
     }
 
@@ -203,21 +236,23 @@ function getOrBuildSegmentedParts(geo: BufferGeometry): CachedSubPart[] | null {
     );
 
     parts.push({
-      name: STRUCTURAL_ZONES[z].name.replace(/\s+/g, ''),
+      name: activeZones[z].name.replace(/\s+/g, ''),
       geometry: subGeo,
       localCenter,
+      isGlass: isBlender ? Boolean(BLENDER_ZONES[z]?.isGlass) : false,
     });
   }
 
   if (parts.length <= 1) return null;
   geo.userData = geo.userData || {};
-  geo.userData._skSegmentedParts = parts;
+  geo.userData[cacheKey] = parts;
   return parts;
 }
 
 /** Clone transforms and materials; retain shared, loader-owned geometries/textures. */
-export function createModelInstance(source: Object3D, modelId: string) {
+export function createModelInstance(source: Object3D, modelId: string, modelName?: string) {
   let root = clone(source);
+  const isBlenderModel = Boolean(modelName && /blender/i.test(modelName));
 
   // If the model contains only a single Mesh (typical for AI-generated GLBs),
   // automatically segment it into structural sub-meshes sharing the original vertex buffers.
@@ -228,7 +263,7 @@ export function createModelInstance(source: Object3D, modelId: string) {
 
   if (allMeshes.length === 1) {
     const singleMesh = allMeshes[0];
-    const segmented = getOrBuildSegmentedParts(singleMesh.geometry);
+    const segmented = getOrBuildSegmentedParts(singleMesh.geometry, isBlenderModel);
     if (segmented && segmented.length > 1) {
       const container = new Group();
       container.name = singleMesh.name || 'SegmentedAssembly';
@@ -247,6 +282,7 @@ export function createModelInstance(source: Object3D, modelId: string) {
           label: part.name.replace(/_/g, ' '),
           _skLocalCenter: part.localCenter.clone(),
           _skSyntheticSplit: true,
+          _skGlassZone: Boolean(part.isGlass),
         };
         container.add(subMesh);
       }
@@ -274,12 +310,14 @@ export function createModelInstance(source: Object3D, modelId: string) {
     if (node instanceof Mesh && node.name) names.set(node.name, (names.get(node.name) ?? 0) + 1);
   });
   const ids = new Set<string>();
-  const materialMap = new Map<Material, Material>();
-  const copy = (material: Material) => {
-    let cloned = materialMap.get(material);
+  const opaqueMaterialMap = new Map<Material, Material>();
+  const glassMaterialMap = new Map<Material, Material>();
+  const copy = (material: Material, isGlass = false) => {
+    const map = isGlass ? glassMaterialMap : opaqueMaterialMap;
+    let cloned = map.get(material);
     if (!cloned) {
       cloned = material.clone();
-      materialMap.set(material, cloned);
+      map.set(material, cloned);
       materials.push(cloned);
     }
     return cloned;
@@ -293,7 +331,10 @@ export function createModelInstance(source: Object3D, modelId: string) {
       const id = `${modelId}/${key}`;
       if (ids.has(id)) throw new Error(`[SpatialKit] Duplicate part id "${id}". Set unique node extras.spatialId values.`);
       ids.add(id);
-      node.material = Array.isArray(node.material) ? node.material.map(copy) : copy(node.material);
+      const isGlass = Boolean(node.userData._skGlassZone);
+      node.material = Array.isArray(node.material)
+        ? node.material.map((m) => copy(m, isGlass))
+        : copy(node.material, isGlass);
       // Preserve baseline position for procedural exploded views
       if (!node.userData._skOriginalPosition) {
         node.userData._skOriginalPosition = node.position.clone();

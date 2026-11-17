@@ -63,18 +63,21 @@ const VISUAL_PRESETS: VisualPreset[] = [
     ),
   },
   {
-    id: 'ps2-console',
-    title: 'PS2 Console & Controller',
-    shortName: 'PS2 & Controller',
-    category: 'Gaming · Retro',
+    id: 'tactical-drone',
+    title: 'Tactical Quad-Rotor Drone',
+    shortName: 'Tactical Drone',
+    category: 'Aerial · Robotics',
     style: 'photorealistic',
     prompt:
-      'Iconic matte charcoal black stepped rectangular PlayStation 2 fat console standing upright on a royal blue vertical stand, deep parallel vertical ribbed ridges along the outer casing, disc tray bay, glowing green and blue power indicator dots, with a matte black DualShock 2 twin-stick controller resting in front',
+      'Futuristic tactical drone with quad-rotors, carbon fiber body and PBR camera sensor',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="3" width="7" height="17" rx="1" />
-        <line x1="6.5" y1="6" x2="6.5" y2="17" />
-        <path d="M13 14.5a2 2 0 0 1 2-1.5h3a2 2 0 0 1 2 1.5l1 3.5a1.5 1.5 0 0 1-2.6 1.2L17.5 18h-2l-.9 1.2A1.5 1.5 0 0 1 12 18l1-3.5Z" />
+        <rect x="9.5" y="9.5" width="5" height="5" rx="1.2" />
+        <path d="M9.5 10.5 6 7m8.5 3.5L18 7M9.5 13.5 6 17m8.5-3.5L18 17" />
+        <circle cx="5.5" cy="6.5" r="2.2" />
+        <circle cx="18.5" cy="6.5" r="2.2" />
+        <circle cx="5.5" cy="17.5" r="2.2" />
+        <circle cx="18.5" cy="17.5" r="2.2" />
       </svg>
     ),
   },
