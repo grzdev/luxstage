@@ -31,7 +31,7 @@ import {
   type ActiveModelControl,
   type StudioEnvironmentPreset,
 } from './Workbench';
-import { MAX_MODEL_MB, MODEL_FIT, type ModelAsset, type ModelUploadProgress } from './model-files';
+import { MAX_MODEL_MB, MODEL_FIT, downloadModelFromSource, type ModelAsset, type ModelUploadProgress } from './model-files';
 import { generateComponent, publicFilename } from './integration';
 import { type Note } from './notes';
 import {
@@ -738,7 +738,7 @@ export function Playground({
   notes?: Note[];
   onNotesChange?: (notes: Note[]) => void;
   onOpenGuide?: () => void;
-  onDownloadModel?: () => void;
+  onDownloadModel?: () => void | Promise<string | void>;
   onOpenSynthesize?: () => void;
 }) {
   const controlsRef = useRef<ComponentRef<typeof BlenderControls>>(null);
@@ -880,22 +880,31 @@ export function Playground({
   const isMobileElevationTool = isMobile && Boolean(activeTool) && !consoleMinimized;
   const mobileModelYOffset = isMobileElevationTool ? 0.95 : 0;
 
+  const [downloadingModel, setDownloadingModel] = useState(false);
+
   async function handleDownloadModel() {
-    if (onDownloadModel) {
-      onDownloadModel();
-      return;
-    }
+    if (downloadingModel) return;
+    setDownloadingModel(true);
     try {
-      const blob = model.file ?? (await fetch(`/${model.filename || 'robot-dog.glb'}`).then((r) => r.blob()));
-      if (!blob) throw new Error('Download failed');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${publicFilename(model.filename || model.name)}.glb`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      let savedName: string | void;
+      if (onDownloadModel) {
+        savedName = await onDownloadModel();
+      } else {
+        savedName = await downloadModelFromSource({
+          file: model.file,
+          sourceUrl: model.sourceUrl,
+          fallbackPath: `/${model.filename || 'robot-dog.glb'}`,
+          nameOrFilename: model.object ? (model.filename || model.name) : model.filename,
+        });
+      }
+      setSnapshotToast(savedName ? `Downloaded ${savedName}` : 'Downloaded 3D model (.glb)');
+      setTimeout(() => setSnapshotToast(null), 2600);
     } catch (e) {
       console.error('Failed to download model:', e);
+      setSnapshotToast('Model download failed. Please try again.');
+      setTimeout(() => setSnapshotToast(null), 2800);
+    } finally {
+      setDownloadingModel(false);
     }
   }
 
@@ -1143,25 +1152,52 @@ export function Playground({
         </div>
       </div>
 
-      {/* ─── Bottom-Left 3D Model Credit Badge (Aligned with bottom dock) ─── */}
-      <div className="playground-credit-badge" role="contentinfo" aria-label="3D Model Attribution">
-        <span className="credit-icon">©</span>
-        {model.object ? (
-          <span className="credit-text" title={model.name}>
-            <span>Model:</span>{' '}
-            <strong className="credit-name">
-              {/brushed anodized aluminum wire/i.test(model.name)
-                ? 'White Headphones'
-                : model.name.length > 20
-                ? formatCompactModelName(model.name)
-                : model.name}
-            </strong>
-          </span>
-        ) : (
-          <span className="credit-text">
-            <span>Powered by</span> <strong className="credit-name">Aholo Lux3D</strong>
-          </span>
-        )}
+      {/* ─── Bottom-Left 3D Model Credit Badge & Download Action ─── */}
+      <div className="playground-credit-stack">
+        <div className="playground-credit-badge" role="contentinfo" aria-label="3D Model Attribution">
+          <span className="credit-icon">©</span>
+          {model.object ? (
+            <span className="credit-text" title={model.name}>
+              <span>Model:</span>{' '}
+              <strong className="credit-name">
+                {/brushed anodized aluminum wire/i.test(model.name)
+                  ? 'White Headphones'
+                  : model.name.length > 20
+                  ? formatCompactModelName(model.name)
+                  : model.name}
+              </strong>
+            </span>
+          ) : (
+            <span className="credit-text">
+              <span>Powered by</span> <strong className="credit-name">Aholo Lux3D</strong>
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="playground-download-btn"
+          onClick={handleDownloadModel}
+          disabled={downloadingModel}
+          title={`Download ${model.object ? model.name : 'Quadruped Robot Dog'} (.glb)`}
+          aria-label="Download active 3D model as GLB"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span>{downloadingModel ? 'Downloading…' : 'Download GLB'}</span>
+        </button>
       </div>
 
       {snapshotToast && (

@@ -10,6 +10,7 @@ declare const __HAS_SERVER_AHOLO_KEY__: boolean | undefined;
 const STORAGE_KEY_API_KEY = 'luxstage_aholo_api_key';
 const STORAGE_KEY_ENDPOINT = 'luxstage_aholo_endpoint';
 const STORAGE_KEY_GENERATED_MODELS = 'luxstage_generated_models_v1';
+const STORAGE_KEY_LIBRARY_MIGRATION = 'luxstage_library_cleaned_v1';
 
 let runtimeServerKeyDetected = false;
 if (typeof window !== 'undefined') {
@@ -243,6 +244,15 @@ export async function pollLux3DTask(
   throw new Error(`Aholo generation timed out after ${Math.round((intervalMs * maxAttempts) / 1000)} seconds.`);
 }
 
+function isRemovedLegacyModel(model: StagedModel): boolean {
+  const haystack = `${model.id || ''} ${model.name || ''} ${model.prompt || ''}`;
+  return (
+    /workdesk|studio\s+display/i.test(haystack) ||
+    /macbook|notched\s+apple|\bmac\b.*(?:laptop|notch)|laptop.*hello/i.test(haystack) ||
+    /preset-pump|px-?04|hydraulic\s+pump/i.test(haystack)
+  );
+}
+
 /**
  * Persists and retrieves user-generated Aholo models in localStorage so tokens are never wasted.
  */
@@ -250,9 +260,31 @@ export function loadSavedGeneratedModels(): StagedModel[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY_GENERATED_MODELS);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed: StagedModel[] = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+
+    if (!localStorage.getItem(STORAGE_KEY_LIBRARY_MIGRATION)) {
+      const sorted = [...list].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      let seenBlender = false;
+      const cleaned = sorted.filter((m) => {
+        if (isRemovedLegacyModel(m)) return false;
+        const text = `${m.name || ''} ${m.prompt || ''}`;
+        if (/kitchen\s+blender/i.test(text)) {
+          if (seenBlender) return false;
+          seenBlender = true;
+        }
+        return true;
+      });
+      try {
+        localStorage.setItem(STORAGE_KEY_GENERATED_MODELS, JSON.stringify(cleaned));
+        localStorage.setItem(STORAGE_KEY_LIBRARY_MIGRATION, '1');
+      } catch {
+        // ignore storage quota errors
+      }
+      return cleaned;
+    }
+
+    return list;
   } catch {
     return [];
   }
@@ -263,6 +295,17 @@ export function saveGeneratedModelToStorage(model: StagedModel): void {
   try {
     const existing = loadSavedGeneratedModels();
     const updated = [model, ...existing.filter((m) => m.id !== model.id)].slice(0, 24);
+    localStorage.setItem(STORAGE_KEY_GENERATED_MODELS, JSON.stringify(updated));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function removeGeneratedModelFromStorage(id: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = loadSavedGeneratedModels();
+    const updated = existing.filter((m) => m.id !== id);
     localStorage.setItem(STORAGE_KEY_GENERATED_MODELS, JSON.stringify(updated));
   } catch {
     // ignore storage quota errors
@@ -290,13 +333,5 @@ export const SHOWCASE_PRESETS: StagedModel[] = [
     url: '/models/DamagedHelmet.glb',
     prompt: 'Battle-hardened tactical sci-fi pilot helmet, PBR copper and oxidized polymer',
     createdAt: Date.now() - 60000,
-  },
-  {
-    id: 'preset-pump',
-    name: 'PX-04 Hydraulic Pump Assembly',
-    source: 'local-preset',
-    url: '/pump.glb',
-    prompt: 'Industrial high-pressure mechanical pump assembly, cast iron with steel linkages',
-    createdAt: Date.now() - 120000,
   },
 ];

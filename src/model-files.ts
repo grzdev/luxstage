@@ -240,12 +240,8 @@ export async function prepareModel(
   };
 }
 
-export async function prepareModelFromUrl(
-  url: string,
-  defaultName?: string,
-  onProgress?: (progress: ModelUploadProgress) => void
-): Promise<ModelAsset> {
-  onProgress?.({ percent: 5, stage: 'Downloading 3D model…' });
+/** Fetch a remote or local GLB binary, automatically falling back through /api/glb-proxy on CORS errors. */
+export async function fetchModelBlob(url: string): Promise<Blob> {
   let response: Response;
   try {
     response = await fetch(url);
@@ -260,7 +256,53 @@ export async function prepareModelFromUrl(
     response = await fetch(`/api/glb-proxy?url=${encodeURIComponent(url)}`);
   }
   if (!response.ok) throw new Error(`Could not load model from URL (${response.status})`);
-  const blob = await response.blob();
+  return response.blob();
+}
+
+export function toGlbDownloadFilename(nameOrFilename?: string): string {
+  const safe = (nameOrFilename || 'model')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^\.+/, '')
+    .replace(/\.(glb|gltf)$/i, '');
+  return `${safe || 'model'}.glb`;
+}
+
+export function downloadModelBlob(blob: Blob, nameOrFilename?: string): string {
+  const filename = toGlbDownloadFilename(nameOrFilename);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return filename;
+}
+
+/** Downloads a GLB from an in-memory File, remote sourceUrl, or local static fallback path. */
+export async function downloadModelFromSource(options: {
+  file?: File;
+  sourceUrl?: string;
+  fallbackPath?: string;
+  nameOrFilename?: string;
+}): Promise<string> {
+  let blob: Blob | undefined = options.file;
+  if (!blob && options.sourceUrl) {
+    blob = await fetchModelBlob(options.sourceUrl);
+  }
+  if (!blob && options.fallbackPath) {
+    blob = await fetchModelBlob(options.fallbackPath);
+  }
+  if (!blob) throw new Error('Model download failed');
+  return downloadModelBlob(blob, options.nameOrFilename);
+}
+
+export async function prepareModelFromUrl(
+  url: string,
+  defaultName?: string,
+  onProgress?: (progress: ModelUploadProgress) => void
+): Promise<ModelAsset> {
+  onProgress?.({ percent: 5, stage: 'Downloading 3D model…' });
+  const blob = await fetchModelBlob(url);
   const cleanUrl = url.split('?')[0].split('#')[0];
   const urlFilename = cleanUrl.split('/').pop() || 'model.glb';
   const rawName = (defaultName || urlFilename).trim();

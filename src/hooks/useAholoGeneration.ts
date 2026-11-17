@@ -11,6 +11,7 @@ import {
   SHOWCASE_PRESETS,
   loadSavedGeneratedModels,
   saveGeneratedModelToStorage,
+  removeGeneratedModelFromStorage,
 } from '../services/aholo';
 
 export type GenerationPhase =
@@ -76,6 +77,7 @@ export interface UseAholoGenerationReturn {
   recentModels: StagedModel[];
   generateFromAsset: (options: GenerateOptions) => Promise<StagedModel>;
   selectModel: (model: StagedModel) => void;
+  removeModel: (id: string) => void;
   clearError: () => void;
 }
 
@@ -112,6 +114,13 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
     setActiveModel(model);
     setPhase('ready');
     setStatusText(`Loaded ${model.name}`);
+  }, []);
+
+  const removeModel = useCallback((id: string) => {
+    if (id.startsWith('preset-')) return;
+    removeGeneratedModelFromStorage(id);
+    setRecentModels((prev) => prev.filter((m) => m.id !== id));
+    setActiveModel((prev) => (prev.id === id ? SHOWCASE_PRESETS[0] : prev));
   }, []);
 
   const generateFromAsset = useCallback(
@@ -209,6 +218,7 @@ export function useAholoGeneration(): UseAholoGenerationReturn {
     recentModels,
     generateFromAsset,
     selectModel,
+    removeModel,
     clearError,
   };
 }

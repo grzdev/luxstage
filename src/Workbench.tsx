@@ -27,7 +27,7 @@ import {
   type SurfaceHit,
 } from 'spatialkit/react';
 import { INITIAL_NOTES, parseNotes, notesKey, annotationOffset, loadNotesFromStorage, type Note } from './notes';
-import { DEMO_MODEL, MAX_MODEL_MB, MODEL_FIT, prepareModel, prepareModelFromUrl, type ModelAsset, type ModelUploadProgress } from './model-files';
+import { DEMO_MODEL, MAX_MODEL_MB, MODEL_FIT, prepareModel, prepareModelFromUrl, downloadModelFromSource, type ModelAsset, type ModelUploadProgress } from './model-files';
 import { generateComponent, publicFilename, INSTALL_COMMAND } from './integration';
 import {
   ControlsLab,
@@ -1032,15 +1032,17 @@ function Workbench({
     setShowNotes(true);
   }
 
-  async function downloadModel() {
+  async function downloadModel(): Promise<string | void> {
     try {
-      const blob = model.file ?? await fetch('/robot-dog.glb').then((response) => {
-        if (!response.ok) throw new Error('Model download failed');
-        return response.blob();
+      return await downloadModelFromSource({
+        file: model.file,
+        sourceUrl: model.sourceUrl,
+        fallbackPath: '/robot-dog.glb',
+        nameOrFilename: model.object ? (model.filename || model.name) : model.filename,
       });
-      if (!blob) throw new Error('Model download failed');
-      download(blob, publicFilename(model.filename));
-    } catch { setStorageState('Model download failed. Please try again.'); }
+    } catch {
+      setStorageState('Model download failed. Please try again.');
+    }
   }
 
   const visibleParts  = parts.filter((p) =>
@@ -2293,6 +2295,7 @@ function Workbench({
         progressPercent={aholoGen.progressPercent}
         error={aholoGen.error}
         activeModel={aholoGen.activeModel}
+        activeStageFile={model.file}
         recentModels={aholoGen.recentModels}
         onGenerate={async (options) => {
           const staged = await aholoGen.generateFromAsset({
@@ -2322,6 +2325,7 @@ function Workbench({
             onSetModel(next);
           }
         }}
+        onRemoveModel={aholoGen.removeModel}
         onClearError={aholoGen.clearError}
       />
 

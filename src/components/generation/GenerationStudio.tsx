@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, type ChangeEvent, type ReactNode } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent, type MouseEvent, type ReactNode } from 'react';
 import type { StagedModel, Lux3DStyle, Lux3DVersion } from '../../types/aholo';
 import type { GenerationPhase, GenerateOptions } from '../../hooks/useAholoGeneration';
 import { hasConfiguredApiKey } from '../../services/aholo';
+import { downloadModelFromSource } from '../../model-files';
 import { SmoothScrollArea } from '../SmoothScrollArea';
 
 interface GenerationStudioProps {
@@ -13,9 +14,11 @@ interface GenerationStudioProps {
   progressPercent: number;
   error: string | null;
   activeModel: StagedModel;
+  activeStageFile?: File;
   recentModels: StagedModel[];
   onGenerate: (options: GenerateOptions) => Promise<StagedModel>;
   onSelectModel: (model: StagedModel) => void;
+  onRemoveModel?: (id: string) => void;
   onClearError: () => void;
 }
 
@@ -143,9 +146,11 @@ export function GenerationStudio({
   progressPercent,
   error,
   activeModel,
+  activeStageFile,
   recentModels,
   onGenerate,
   onSelectModel,
+  onRemoveModel,
   onClearError,
 }: GenerationStudioProps) {
   const [activeTab, setActiveTab] = useState<'prompt' | 'image' | 'presets'>('prompt');
@@ -157,6 +162,8 @@ export function GenerationStudio({
   const [faceCount, setFaceCount] = useState<number>(150000);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isBusy =
@@ -581,46 +588,123 @@ export function GenerationStudio({
                 </>
               )}
 
-              {activeTab === 'presets' && (
-                <div className="lux-library-container">
-                  <div className="lux-section-label" style={{ marginBottom: 10 }}>
-                    <span>Generated & Staged 3D Assets</span>
-                    <span className="lux-section-hint">Click any model to load into playground</span>
-                  </div>
-                  <div className="lux-library-list">
-                    {recentModels.map((item) => {
-                      const isCurrent = activeModel.id === item.id;
-                      const isAholo = item.source === 'aholo-lux3d';
-                      return (
+              {activeTab === 'presets' && (() => {
+                const userCreations = recentModels.filter((m) => !m.id.startsWith('preset-'));
+                const showcasePresets = recentModels.filter((m) => m.id.startsWith('preset-'));
+
+                const handleDownloadCard = async (e: MouseEvent, item: StagedModel) => {
+                  e.stopPropagation();
+                  if (downloadingId) return;
+                  setLibraryError(null);
+                  setDownloadingId(item.id);
+                  try {
+                    await downloadModelFromSource({
+                      file: activeModel.id === item.id ? activeStageFile : undefined,
+                      sourceUrl: /^https?:\/\//i.test(item.url) ? item.url : undefined,
+                      fallbackPath: item.url,
+                      nameOrFilename: item.name,
+                    });
+                  } catch {
+                    setLibraryError(`Could not download "${item.name}". If it is an older cloud asset, its signed CDN link may have expired.`);
+                  } finally {
+                    setDownloadingId(null);
+                  }
+                };
+
+                const renderLibraryCard = (item: StagedModel, isUserCreated: boolean) => {
+                  const isCurrent = activeModel.id === item.id;
+                  const isBusyDownload = downloadingId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      className={`lux-library-row ${isCurrent ? 'active' : ''}`}
+                      onClick={() => onSelectModel(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onSelectModel(item);
+                        }
+                      }}
+                    >
+                      <div className={`lux-library-icon ${isUserCreated ? 'aholo' : ''}`}>
+                        {isUserCreated ? '✦' : '⬡'}
+                      </div>
+                      <div className="lux-library-info">
+                        <div className="lux-library-title-row">
+                          <strong>{item.name}</strong>
+                          <span className={`lux-library-tag ${isUserCreated ? 'aholo' : ''}`}>
+                            {isUserCreated ? '✦ Your Creation' : 'Starter Preset'}
+                          </span>
+                        </div>
+                        {item.prompt && (
+                          <p className="lux-library-prompt">“{item.prompt}”</p>
+                        )}
+                      </div>
+                      <div className="lux-library-row-controls">
                         <button
-                          key={item.id}
                           type="button"
-                          className={`lux-library-row ${isCurrent ? 'active' : ''}`}
-                          onClick={() => onSelectModel(item)}
+                          className="lux-library-icon-btn"
+                          title={`Download ${item.name}.glb`}
+                          aria-label={`Download ${item.name} GLB`}
+                          disabled={Boolean(downloadingId)}
+                          onClick={(e) => handleDownloadCard(e, item)}
                         >
-                          <div className={`lux-library-icon ${isAholo ? 'aholo' : ''}`}>
-                            {isAholo ? '✦' : '⬡'}
-                          </div>
-                          <div className="lux-library-info">
-                            <div className="lux-library-title-row">
-                              <strong>{item.name}</strong>
-                              <span className={`lux-library-tag ${isAholo ? 'aholo' : ''}`}>
-                                {isAholo ? '✦ Aholo Lux3D' : 'Starter Asset'}
-                              </span>
-                            </div>
-                            {item.prompt && (
-                              <p className="lux-library-prompt">“{item.prompt}”</p>
-                            )}
-                          </div>
-                          <div className="lux-library-action">
-                            {isCurrent ? 'Staged' : 'Load →'}
-                          </div>
+                          {isBusyDownload ? '…' : '⤓'}
                         </button>
-                      );
-                    })}
+                        {isUserCreated && onRemoveModel && (
+                          <button
+                            type="button"
+                            className="lux-library-icon-btn danger"
+                            title={`Remove ${item.name} from browser library`}
+                            aria-label={`Remove ${item.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveModel(item.id);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <div className="lux-library-action">
+                          {isCurrent ? 'Staged' : 'Load →'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="lux-library-container">
+                    {libraryError && (
+                      <div className="lux-error-banner" style={{ marginBottom: 10 }}>
+                        {libraryError}
+                      </div>
+                    )}
+
+                    {userCreations.length > 0 && (
+                      <>
+                        <div className="lux-section-label" style={{ marginBottom: 8 }}>
+                          <span>Your Generated Models ({userCreations.length})</span>
+                          <span className="lux-section-hint">Saved locally in this browser</span>
+                        </div>
+                        <div className="lux-library-list" style={{ marginBottom: 14 }}>
+                          {userCreations.map((item) => renderLibraryCard(item, true))}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="lux-section-label" style={{ marginBottom: 8 }}>
+                      <span>Starter Showcase Presets ({showcasePresets.length})</span>
+                      <span className="lux-section-hint">Click any model to load into playground</span>
+                    </div>
+                    <div className="lux-library-list">
+                      {showcasePresets.map((item) => renderLibraryCard(item, false))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Error Message */}
               {error && (
