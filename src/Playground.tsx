@@ -1481,6 +1481,7 @@ export function Playground({
                       object={defaultStageAsset.scene}
                       animations={defaultStageAsset.animations}
                       modelId="robot-dog"
+                      modelName="Quadruped Robot Dog"
                       fit={MODEL_FIT}
                       animationProgress={animationProgress}
                       explode={activeTool === 'explode' ? proceduralExplode : 0}

@@ -31,13 +31,27 @@ interface CachedSubPart {
   name: string;
   geometry: BufferGeometry;
   localCenter: Vector3;
+  explodeDir?: Vector3;
   isGlass?: boolean;
+}
+
+type SemanticProfile = 'blender' | 'drone' | 'headphone' | 'sneaker' | 'robot' | 'generic';
+
+function detectSemanticProfile(modelName?: string): SemanticProfile {
+  if (!modelName) return 'generic';
+  const s = modelName.toLowerCase();
+  if (/blender|pitcher|juicer|mixer/.test(s)) return 'blender';
+  if (/drone|quad|rotor|uav/.test(s)) return 'drone';
+  if (/headphone|headset|earphone/.test(s)) return 'headphone';
+  if (/sneaker|shoe|boot|trainer/.test(s)) return 'sneaker';
+  if (/robot|dog|quadruped|mech/.test(s)) return 'robot';
+  return 'generic';
 }
 
 const STRUCTURAL_ZONES: ReadonlyArray<{ name: string; u: [number, number, number] }> = [
   { name: 'Apex_Crown_Module', u: [0.5, 0.88, 0.5] },
   { name: 'Forward_Prow_Assembly', u: [0.5, 0.58, 0.86] },
-  { name: 'Aft_ Stern_Assembly', u: [0.5, 0.58, 0.14] },
+  { name: 'Aft_Stern_Assembly', u: [0.5, 0.58, 0.14] },
   { name: 'Port_Flank_Shell', u: [0.14, 0.56, 0.5] },
   { name: 'Starboard_Flank_Shell', u: [0.86, 0.56, 0.5] },
   { name: 'Central_Core_Chassis', u: [0.5, 0.52, 0.5] },
@@ -47,26 +61,12 @@ const STRUCTURAL_ZONES: ReadonlyArray<{ name: string; u: [number, number, number
   { name: 'Rear_Starboard_Strut', u: [0.76, 0.18, 0.22] },
 ];
 
-const BLENDER_ZONES: ReadonlyArray<{ name: string; isGlass: boolean; u: [number, number, number] }> = [
-  { name: 'Sealed_Top_Lid', isGlass: false, u: [0.5, 0.92, 0.5] },
-  { name: 'Glass_Pitcher_Front', isGlass: true, u: [0.5, 0.61, 0.78] },
-  { name: 'Glass_Pitcher_Rear', isGlass: true, u: [0.5, 0.61, 0.22] },
-  { name: 'Glass_Pitcher_Left', isGlass: true, u: [0.22, 0.61, 0.5] },
-  { name: 'Glass_Pitcher_Right', isGlass: true, u: [0.82, 0.61, 0.5] },
-  { name: 'Blade_Collar_Seal', isGlass: false, u: [0.5, 0.31, 0.5] },
-  { name: 'Steel_Base_Front', isGlass: false, u: [0.5, 0.16, 0.82] },
-  { name: 'Steel_Base_Rear', isGlass: false, u: [0.5, 0.16, 0.18] },
-  { name: 'Steel_Base_Left', isGlass: false, u: [0.18, 0.16, 0.5] },
-  { name: 'Steel_Base_Right', isGlass: false, u: [0.82, 0.16, 0.5] },
-];
-
 /**
- * Partition a single-mesh AI model into 10 seamless spatial sub-meshes sharing the original
- * vertex/normal/UV buffers so that 0% explode has zero visible seams while >0% explode
- * radially separates the model into interactive 3D structural sub-parts.
+ * Partition a single-mesh AI model into functional, semantic sub-meshes sharing
+ * the original vertex/normal/UV buffers (0% seam when assembled, realistic mechanical separation when split).
  */
-function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): CachedSubPart[] | null {
-  const cacheKey = isBlender ? '_skSegmentedPartsBlender' : '_skSegmentedParts';
+function getOrBuildSegmentedParts(geo: BufferGeometry, profile: SemanticProfile = 'generic'): CachedSubPart[] | null {
+  const cacheKey = `_skSegmentedParts_${profile}`;
   if (geo.userData?.[cacheKey]) {
     return geo.userData[cacheKey] as CachedSubPart[];
   }
@@ -78,24 +78,390 @@ function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): Cache
   if (!bbox || bbox.isEmpty()) return null;
 
   const minX = bbox.min.x, minY = bbox.min.y, minZ = bbox.min.z;
-  const invSpanX = 1 / Math.max(1e-5, bbox.max.x - minX);
-  const invSpanY = 1 / Math.max(1e-5, bbox.max.y - minY);
-  const invSpanZ = 1 / Math.max(1e-5, bbox.max.z - minZ);
+  const spanX = Math.max(1e-5, bbox.max.x - minX);
+  const spanY = Math.max(1e-5, bbox.max.y - minY);
+  const spanZ = Math.max(1e-5, bbox.max.z - minZ);
+  const invSpanX = 1 / spanX;
+  const invSpanY = 1 / spanY;
+  const invSpanZ = 1 / spanZ;
 
   const indexAttr = geo.index;
   const triCount = indexAttr ? Math.floor(indexAttr.count / 3) : Math.floor(posAttr.count / 3);
   if (triCount < 12) return null;
 
-  const activeZones = isBlender ? BLENDER_ZONES : STRUCTURAL_ZONES;
-  const zoneCount = activeZones.length;
-  const zoneU = new Float64Array(zoneCount * 3);
-  for (let z = 0; z < zoneCount; z++) {
-    zoneU[z * 3] = activeZones[z].u[0];
-    zoneU[z * 3 + 1] = activeZones[z].u[1];
-    zoneU[z * 3 + 2] = activeZones[z].u[2];
+  const posArr = posAttr.array as ArrayLike<number>;
+  const posStride = posAttr.itemSize || 3;
+  const idxArr = indexAttr ? (indexAttr.array as ArrayLike<number>) : null;
+  const oneThird = 1 / 3;
+
+  // Profile metadata descriptors (populated per semantic profile)
+  interface ZoneSpec {
+    name: string;
+    isGlass?: boolean;
+    dir?: [number, number, number];
+  }
+  let zones: ZoneSpec[] = [];
+  const triZones = new Uint8Array(triCount);
+
+  if (profile === 'blender') {
+    // Pass A: Measure exact circular collar axis & radius between ny = 0.29..0.38
+    let collarSumX = 0, collarSumZ = 0, collarCount = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const cy = (posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird;
+      const ny = (cy - minY) * invSpanY;
+      if (ny >= 0.29 && ny <= 0.38) {
+        const cx = (posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird;
+        const cz = (posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird;
+        collarSumX += (cx - minX) * invSpanX;
+        collarSumZ += (cz - minZ) * invSpanZ;
+        collarCount++;
+      }
+    }
+    const axisX = collarCount > 0 ? collarSumX / collarCount : 0.44;
+    const axisZ = collarCount > 0 ? collarSumZ / collarCount : 0.5;
+
+    let collarRadiusSum = 0;
+    let baseAvgR = 0, baseCount = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const cy = (posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird;
+      const ny = (cy - minY) * invSpanY;
+      const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      const r = Math.hypot(nx - axisX, nz - axisZ);
+      if (ny >= 0.30 && ny <= 0.37) {
+        collarRadiusSum += r;
+      } else if (ny < 0.26) {
+        baseAvgR += r;
+        baseCount++;
+      }
+    }
+    const collarR = collarCount > 0 ? collarRadiusSum / collarCount : 0.26;
+    const jugWallCutoff = collarR * 1.32;
+    const dialCutoff = baseCount > 0 ? (baseAvgR / baseCount) * 1.15 : 0.34;
+
+    // Accumulate handle & dial vector centers so they explode along their exact physical normal
+    let handleX = 0, handleZ = 0, handleN = 0;
+    let dialX = 0, dialZ = 0, dialN = 0;
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      const dx = nx - axisX;
+      const dz = nz - axisZ;
+      const r = Math.hypot(dx, dz);
+
+      if (ny >= 0.855) {
+        triZones[t] = 0; // Sealed Top Cover
+      } else if (ny >= 0.36) {
+        if (r > jugWallCutoff) {
+          triZones[t] = 2; // Side Handle
+          handleX += dx;
+          handleZ += dz;
+          handleN++;
+        } else {
+          triZones[t] = 1; // Whole Translucent Glass Pitcher Jug
+        }
+      } else if (ny >= 0.295) {
+        triZones[t] = 3; // Blade Collar & Gasket Ring
+      } else if (ny >= 0.06 && ny <= 0.24 && r > dialCutoff) {
+        triZones[t] = 4; // Front Rotary Speed Dial
+        dialX += dx;
+        dialZ += dz;
+        dialN++;
+      } else {
+        triZones[t] = 5; // Heavy Steel Motor Base
+      }
+    }
+
+    const hLen = Math.hypot(handleX, handleZ) || 1;
+    const dLen = Math.hypot(dialX, dialZ) || 1;
+    zones = [
+      { name: 'Top_Lid_Cover', isGlass: false, dir: [0, 1.15, 0] },
+      { name: 'Glass_Pitcher_Jug', isGlass: true, dir: [0, 0.32, 0] },
+      { name: 'Pitcher_Side_Handle', isGlass: false, dir: handleN ? [(handleX / hLen) * 1.05, 0.22, (handleZ / hLen) * 1.05] : [1.0, 0.22, 0] },
+      { name: 'Blade_Collar_Seal', isGlass: false, dir: [0, -0.18, 0] },
+      { name: 'Rotary_Speed_Dial', isGlass: false, dir: dialN ? [(dialX / dLen) * 0.95, -0.35, (dialZ / dLen) * 0.95] : [0, -0.35, 0.95] },
+      { name: 'Steel_Motor_Base', isGlass: false, dir: [0, -0.85, 0] },
+    ];
+  } else if (profile === 'drone') {
+    // Pass A: Compute minY/maxY per outer rotor quadrant to cleanly slice Blades above Arms
+    const quadMinY = new Float64Array(4).fill(Infinity);
+    const quadMaxY = new Float64Array(4).fill(-Infinity);
+    const triCorner = new Int8Array(triCount);
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      const dx = nx - 0.5;
+      const dz = nz - 0.5;
+      const r = Math.hypot(dx, dz);
+
+      if (r < 0.21) {
+        triCorner[t] = -1;
+      } else {
+        const q = (dx >= 0 ? 1 : 0) + (dz >= 0 ? 2 : 0);
+        triCorner[t] = q;
+        if (ny < quadMinY[q]) quadMinY[q] = ny;
+        if (ny > quadMaxY[q]) quadMaxY[q] = ny;
+      }
+    }
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const q = triCorner[t];
+      if (q < 0) {
+        triZones[t] = ny < 0.36 ? 1 : 0; // Camera Pod vs Central Body
+      } else {
+        const qSpan = Math.max(1e-4, quadMaxY[q] - quadMinY[q]);
+        const isBlade = ny >= quadMinY[q] + qSpan * 0.56;
+        triZones[t] = 2 + q * 2 + (isBlade ? 1 : 0);
+      }
+    }
+
+    zones = [
+      { name: 'Central_Carbon_Body', dir: [0, 0.12, 0] },
+      { name: 'Gimbal_Camera_Sensor', dir: [0, -0.95, 0] },
+      { name: 'Rear_Left_Motor_Arm', dir: [-0.88, -0.05, -0.88] },
+      { name: 'Rear_Left_Rotor_Blade', dir: [-0.52, 1.05, -0.52] },
+      { name: 'Rear_Right_Motor_Arm', dir: [0.88, -0.05, -0.88] },
+      { name: 'Rear_Right_Rotor_Blade', dir: [0.52, 1.05, -0.52] },
+      { name: 'Front_Left_Motor_Arm', dir: [-0.88, -0.05, 0.88] },
+      { name: 'Front_Left_Rotor_Blade', dir: [-0.52, 1.05, 0.52] },
+      { name: 'Front_Right_Motor_Arm', dir: [0.88, -0.05, 0.88] },
+      { name: 'Front_Right_Rotor_Blade', dir: [0.52, 1.05, 0.52] },
+    ];
+  } else if (profile === 'headphone') {
+    // Auto-detect stereo ear-to-ear axis (whichever of X or Z has wider spread in lower cup zone)
+    let cMinX = 1, cMaxX = 0, cMinZ = 1, cMaxZ = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      if (ny < 0.48) {
+        const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+        const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+        if (nx < cMinX) cMinX = nx;
+        if (nx > cMaxX) cMaxX = nx;
+        if (nz < cMinZ) cMinZ = nz;
+        if (nz > cMaxZ) cMaxZ = nz;
+      }
+    }
+    const useXAxis = (cMaxX - cMinX) * spanX >= (cMaxZ - cMinZ) * spanZ;
+
+    // Measure median U of Left vs Right ear cup so inner Foam Cushions separate cleanly from outer Driver Housing
+    let leftUSum = 0, leftN = 0, rightUSum = 0, rightN = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      if (ny < 0.46) {
+        const coord = useXAxis
+          ? ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX
+          : ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+        if (coord < 0.5) {
+          leftUSum += coord;
+          leftN++;
+        } else {
+          rightUSum += coord;
+          rightN++;
+        }
+      }
+    }
+    const leftSplitU = leftN > 0 ? leftUSum / leftN : 0.24;
+    const rightSplitU = rightN > 0 ? rightUSum / rightN : 0.76;
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const u = useXAxis
+        ? ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX
+        : ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+
+      if (ny >= 0.60) {
+        triZones[t] = 0; // Padded Headband Arch
+      } else if (ny >= 0.46) {
+        triZones[t] = u < 0.5 ? 1 : 2; // Aluminum Yokes / Holders
+      } else if (u < 0.5) {
+        triZones[t] = u >= leftSplitU ? 3 : 4; // Inner Foam Cushion vs Outer Driver Shell (Left)
+      } else {
+        triZones[t] = u <= rightSplitU ? 5 : 6; // Inner Foam Cushion vs Outer Driver Shell (Right)
+      }
+    }
+
+    const axisDir = (mag: number): [number, number, number] =>
+      useXAxis ? [mag, -0.05, 0] : [0, -0.05, mag];
+    zones = [
+      { name: 'Padded_Headband_Arch', dir: [0, 0.95, 0] },
+      { name: 'Left_Hinge_Holder', dir: axisDir(-0.55).map((v, idx) => (idx === 1 ? 0.52 : v)) as [number, number, number] },
+      { name: 'Right_Hinge_Holder', dir: axisDir(0.55).map((v, idx) => (idx === 1 ? 0.52 : v)) as [number, number, number] },
+      { name: 'Left_Foam_Ear_Cushion', dir: axisDir(0.45) }, // Pops INWARD off the cup!
+      { name: 'Left_Driver_Housing', dir: axisDir(-0.98) },  // Pulls OUTWARD!
+      { name: 'Right_Foam_Ear_Cushion', dir: axisDir(-0.45) }, // Pops INWARD off the cup!
+      { name: 'Right_Driver_Housing', dir: axisDir(0.98) },   // Pulls OUTWARD!
+    ];
+  } else if (profile === 'sneaker') {
+    const useXLong = spanX >= spanZ;
+    let lowMaxY = 0, highMaxY = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const u = useXLong
+        ? ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX
+        : ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      if (u < 0.3 && ny > lowMaxY) lowMaxY = ny;
+      if (u > 0.7 && ny > highMaxY) highMaxY = ny;
+    }
+    const heelIsLow = lowMaxY >= highMaxY;
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const u = useXLong
+        ? ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX
+        : ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      const uAlong = heelIsLow ? u : 1 - u; // 0 = heel, 1 = toe
+
+      if (ny < 0.34) {
+        triZones[t] = 0; // Sculpted Midsole / Outsole
+      } else if (ny >= 0.65 && uAlong < 0.68) {
+        triZones[t] = 1; // Collar & Lacing Tongue
+      } else if (uAlong < 0.45) {
+        triZones[t] = 2; // Heel Counter Shell
+      } else {
+        triZones[t] = 3; // Knit Toe Upper
+      }
+    }
+
+    const fwdSign = heelIsLow ? 1 : -1;
+    const axisPush = (m: number): [number, number, number] =>
+      useXLong ? [m * fwdSign, 0.12, 0] : [0, 0.12, m * fwdSign];
+    zones = [
+      { name: 'Sculpted_Lattice_Midsole', dir: [0, -0.88, 0] },
+      { name: 'Collar_&_Lacing_Tongue', dir: [0, 0.92, 0] },
+      { name: 'Heel_Stabilizer_Counter', dir: axisPush(-0.85) },
+      { name: 'Breathable_Toe_Upper', dir: axisPush(0.9) },
+    ];
+  } else if (profile === 'robot') {
+    const useZForward = spanZ >= spanX;
+    let lowMaxY = 0, highMaxY = 0;
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const fwd = useZForward
+        ? ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ
+        : ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      if (fwd < 0.35 && ny > lowMaxY) lowMaxY = ny;
+      if (fwd > 0.65 && ny > highMaxY) highMaxY = ny;
+    }
+    const headAtHigh = highMaxY >= lowMaxY;
+
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      const rawFwd = useZForward ? nz : nx;
+      const lat = useZForward ? nx : nz;
+      const f = headAtHigh ? rawFwd : 1 - rawFwd; // 1 = head/front, 0 = rear
+
+      if (ny >= 0.67 && f >= 0.56) {
+        triZones[t] = 0; // LiDAR Sensor Head Turret
+      } else if (ny >= 0.49) {
+        triZones[t] = f <= 0.24 ? 2 : 1; // Rear Power Module vs Armor Chassis
+      } else {
+        const legIdx = (f >= 0.5 ? 0 : 2) + (lat < 0.5 ? 0 : 1);
+        triZones[t] = 3 + legIdx;
+      }
+    }
+
+    const fwdSign = headAtHigh ? 1 : -1;
+    const toWorld = (f: number, y: number, l: number): [number, number, number] =>
+      useZForward ? [l, y, f * fwdSign] : [f * fwdSign, y, l];
+    zones = [
+      { name: 'LiDAR_Head_Turret', dir: toWorld(0.42, 0.92, 0) },
+      { name: 'Main_Armor_Chassis', dir: [0, 0.22, 0] },
+      { name: 'Rear_Power_Module', dir: toWorld(-0.85, 0.3, 0) },
+      { name: 'Front_Left_Leg', dir: toWorld(0.55, -0.58, -0.68) },
+      { name: 'Front_Right_Leg', dir: toWorld(0.55, -0.58, 0.68) },
+      { name: 'Rear_Left_Leg', dir: toWorld(-0.55, -0.58, -0.68) },
+      { name: 'Rear_Right_Leg', dir: toWorld(-0.55, -0.58, 0.68) },
+    ];
+  } else {
+    const zCount = STRUCTURAL_ZONES.length;
+    const zoneU = new Float64Array(zCount * 3);
+    for (let z = 0; z < zCount; z++) {
+      zoneU[z * 3] = STRUCTURAL_ZONES[z].u[0];
+      zoneU[z * 3 + 1] = STRUCTURAL_ZONES[z].u[1];
+      zoneU[z * 3 + 2] = STRUCTURAL_ZONES[z].u[2];
+    }
+    for (let t = 0; t < triCount; t++) {
+      const t3 = t * 3;
+      const i0 = idxArr ? idxArr[t3] : t3;
+      const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
+      const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
+      const nx = ((posArr[i0 * posStride] + posArr[i1 * posStride] + posArr[i2 * posStride]) * oneThird - minX) * invSpanX;
+      const ny = ((posArr[i0 * posStride + 1] + posArr[i1 * posStride + 1] + posArr[i2 * posStride + 1]) * oneThird - minY) * invSpanY;
+      const nz = ((posArr[i0 * posStride + 2] + posArr[i1 * posStride + 2] + posArr[i2 * posStride + 2]) * oneThird - minZ) * invSpanZ;
+      let bestZone = 0;
+      let bestDistSq = Infinity;
+      for (let z = 0; z < zCount; z++) {
+        const zu = z * 3;
+        const dx = nx - zoneU[zu];
+        const dy = ny - zoneU[zu + 1];
+        const dz = nz - zoneU[zu + 2];
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          bestZone = z;
+        }
+      }
+      triZones[t] = bestZone;
+    }
+    zones = STRUCTURAL_ZONES.map((z) => ({ name: z.name }));
   }
 
-  const triZones = new Uint8Array(triCount);
+  const zoneCount = zones.length;
   const triCounts = new Int32Array(zoneCount);
   const centroidSumsX = new Float64Array(zoneCount);
   const centroidSumsY = new Float64Array(zoneCount);
@@ -107,70 +473,22 @@ function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): Cache
   const maxBoundsY = new Float64Array(zoneCount).fill(-Infinity);
   const maxBoundsZ = new Float64Array(zoneCount).fill(-Infinity);
 
-  const posArr = posAttr.array as ArrayLike<number>;
-  const posStride = posAttr.itemSize || 3;
-  const idxArr = indexAttr ? (indexAttr.array as ArrayLike<number>) : null;
-  const oneThird = 1 / 3;
-
-  // Pass 1: Fast zero-allocation typed-array classification & bounds computation
   for (let t = 0; t < triCount; t++) {
+    const z = triZones[t];
     const t3 = t * 3;
     const i0 = idxArr ? idxArr[t3] : t3;
     const i1 = idxArr ? idxArr[t3 + 1] : t3 + 1;
     const i2 = idxArr ? idxArr[t3 + 2] : t3 + 2;
 
-    const p0 = i0 * posStride;
-    const p1 = i1 * posStride;
-    const p2 = i2 * posStride;
-
+    const p0 = i0 * posStride, p1 = i1 * posStride, p2 = i2 * posStride;
     const x0 = posArr[p0], y0 = posArr[p0 + 1], z0 = posArr[p0 + 2];
     const x1 = posArr[p1], y1 = posArr[p1 + 1], z1 = posArr[p1 + 2];
     const x2 = posArr[p2], y2 = posArr[p2 + 1], z2 = posArr[p2 + 2];
 
-    const cx = (x0 + x1 + x2) * oneThird;
-    const cy = (y0 + y1 + y2) * oneThird;
-    const cz = (z0 + z1 + z2) * oneThird;
-
-    const nx = (cx - minX) * invSpanX;
-    const ny = (cy - minY) * invSpanY;
-    const nz = (cz - minZ) * invSpanZ;
-
-    let bestZone = 0;
-    let bestDistSq = Infinity;
-    if (isBlender) {
-      // Respect crisp horizontal material boundaries between Lid (ny >= 0.855), Glass Jug (0.36..0.855), and Steel Base (ny < 0.36)
-      const startZ = ny >= 0.855 ? 0 : ny >= 0.36 ? 1 : 5;
-      const endZ = ny >= 0.855 ? 1 : ny >= 0.36 ? 5 : zoneCount;
-      for (let z = startZ; z < endZ; z++) {
-        const zu = z * 3;
-        const dx = nx - zoneU[zu];
-        const dy = ny - zoneU[zu + 1];
-        const dz = nz - zoneU[zu + 2];
-        const dSq = dx * dx + dy * dy + dz * dz;
-        if (dSq < bestDistSq) {
-          bestDistSq = dSq;
-          bestZone = z;
-        }
-      }
-    } else {
-      for (let z = 0; z < zoneCount; z++) {
-        const zu = z * 3;
-        const dx = nx - zoneU[zu];
-        const dy = ny - zoneU[zu + 1];
-        const dz = nz - zoneU[zu + 2];
-        const dSq = dx * dx + dy * dy + dz * dz;
-        if (dSq < bestDistSq) {
-          bestDistSq = dSq;
-          bestZone = z;
-        }
-      }
-    }
-
-    triZones[t] = bestZone;
-    triCounts[bestZone]++;
-    centroidSumsX[bestZone] += cx;
-    centroidSumsY[bestZone] += cy;
-    centroidSumsZ[bestZone] += cz;
+    triCounts[z]++;
+    centroidSumsX[z] += (x0 + x1 + x2) * oneThird;
+    centroidSumsY[z] += (y0 + y1 + y2) * oneThird;
+    centroidSumsZ[z] += (z0 + z1 + z2) * oneThird;
 
     const tMinX = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
     const tMinY = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
@@ -179,15 +497,14 @@ function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): Cache
     const tMaxY = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
     const tMaxZ = z0 > z1 ? (z0 > z2 ? z0 : z2) : (z1 > z2 ? z1 : z2);
 
-    if (tMinX < minBoundsX[bestZone]) minBoundsX[bestZone] = tMinX;
-    if (tMinY < minBoundsY[bestZone]) minBoundsY[bestZone] = tMinY;
-    if (tMinZ < minBoundsZ[bestZone]) minBoundsZ[bestZone] = tMinZ;
-    if (tMaxX > maxBoundsX[bestZone]) maxBoundsX[bestZone] = tMaxX;
-    if (tMaxY > maxBoundsY[bestZone]) maxBoundsY[bestZone] = tMaxY;
-    if (tMaxZ > maxBoundsZ[bestZone]) maxBoundsZ[bestZone] = tMaxZ;
+    if (tMinX < minBoundsX[z]) minBoundsX[z] = tMinX;
+    if (tMinY < minBoundsY[z]) minBoundsY[z] = tMinY;
+    if (tMinZ < minBoundsZ[z]) minBoundsZ[z] = tMinZ;
+    if (tMaxX > maxBoundsX[z]) maxBoundsX[z] = tMaxX;
+    if (tMaxY > maxBoundsY[z]) maxBoundsY[z] = tMaxY;
+    if (tMaxZ > maxBoundsZ[z]) maxBoundsZ[z] = tMaxZ;
   }
 
-  // Pass 2: Preallocate exact-size typed index arrays & fill sequentially
   const useUint32 = posAttr.count > 65535;
   const typedBuckets: Array<Uint16Array | Uint32Array | null> = new Array(zoneCount).fill(null);
   const writePos = new Int32Array(zoneCount);
@@ -235,11 +552,13 @@ function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): Cache
       centroidSumsZ[z] / count
     );
 
+    const spec = zones[z];
     parts.push({
-      name: activeZones[z].name.replace(/\s+/g, ''),
+      name: spec.name.replace(/\s+/g, ''),
       geometry: subGeo,
       localCenter,
-      isGlass: isBlender ? Boolean(BLENDER_ZONES[z]?.isGlass) : false,
+      explodeDir: spec.dir ? new Vector3(...spec.dir) : undefined,
+      isGlass: Boolean(spec.isGlass),
     });
   }
 
@@ -252,10 +571,10 @@ function getOrBuildSegmentedParts(geo: BufferGeometry, isBlender = false): Cache
 /** Clone transforms and materials; retain shared, loader-owned geometries/textures. */
 export function createModelInstance(source: Object3D, modelId: string, modelName?: string) {
   let root = clone(source);
-  const isBlenderModel = Boolean(modelName && /blender/i.test(modelName));
+  const profile = detectSemanticProfile(modelName || modelId);
 
   // If the model contains only a single Mesh (typical for AI-generated GLBs),
-  // automatically segment it into structural sub-meshes sharing the original vertex buffers.
+  // automatically segment it into anatomy/function-aware structural sub-meshes sharing the vertex buffers.
   const allMeshes: Mesh[] = [];
   root.traverse((n) => {
     if (n instanceof Mesh) allMeshes.push(n);
@@ -263,7 +582,7 @@ export function createModelInstance(source: Object3D, modelId: string, modelName
 
   if (allMeshes.length === 1) {
     const singleMesh = allMeshes[0];
-    const segmented = getOrBuildSegmentedParts(singleMesh.geometry, isBlenderModel);
+    const segmented = getOrBuildSegmentedParts(singleMesh.geometry, profile);
     if (segmented && segmented.length > 1) {
       const container = new Group();
       container.name = singleMesh.name || 'SegmentedAssembly';
@@ -281,6 +600,7 @@ export function createModelInstance(source: Object3D, modelId: string, modelName
           ...singleMesh.userData,
           label: part.name.replace(/_/g, ' '),
           _skLocalCenter: part.localCenter.clone(),
+          _skExplodeDir: part.explodeDir ? part.explodeDir.clone() : undefined,
           _skSyntheticSplit: true,
           _skGlassZone: Boolean(part.isGlass),
         };

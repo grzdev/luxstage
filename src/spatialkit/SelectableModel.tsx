@@ -368,14 +368,17 @@ export function SelectableObject({
         localCenters.set(mesh, mesh.worldToLocal(meshCenter.clone()));
       }
 
-      const explodeDir = new Vector3().subVectors(meshCenter, modelCenter);
+      const customDir = mesh.userData._skExplodeDir as Vector3 | undefined;
+      const explodeDir = customDir
+        ? customDir.clone()
+        : new Vector3().subVectors(meshCenter, modelCenter);
       if (explodeDir.lengthSq() < 0.0001) {
         explodeDir.set(0, 1, 0);
       } else {
-        explodeDir.normalize();
+        explodeDir.normalize().multiplyScalar(customDir ? customDir.length() : 1);
       }
-      // Scale displacement by modelSpan * 0.42 so every model (mm, cm, or m) explodes proportionally in 3D space
-      explodeDir.multiplyScalar(modelSpan * 0.42);
+      // Scale displacement by modelSpan * 0.44 so every semantic part separates cleanly in 3D space
+      explodeDir.multiplyScalar(modelSpan * 0.44);
       vectors.set(mesh, explodeDir);
     }
     return { vectors, localCenters };
