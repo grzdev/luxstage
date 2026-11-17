@@ -9,9 +9,9 @@
 **Generate 3D models with Aholo Lux3D — then disassemble, light, slice, fly, and export them live in your browser.**  
 *Built for the Manycore Aholo Global 3D AI Hackathon*
 
+[![Live Playground](https://img.shields.io/badge/▶_Live_Playground-luxstage.netlify.app-58ddba?style=for-the-badge&labelColor=070b14)](https://luxstage.netlify.app/)
 [![Watch Demo Video](https://img.shields.io/badge/🎬_Watch_Demo_Video-Google_Drive-f59e0b?style=for-the-badge&labelColor=070b14)](https://drive.google.com/file/d/15XD_fbg4DB_7AZ4EcGKQ-a9J7YKN6xRb/view?usp=sharing)
 [![Aholo Hackathon](https://img.shields.io/badge/Aholo_Global_3D_AI-Hackathon_2026-38bdf8?style=for-the-badge&labelColor=070b14)](https://www.aholo.ai/hackathon)
-[![Live Site](https://img.shields.io/badge/▶_Live_Playground-Add_Netlify_URL-58ddba?style=for-the-badge&labelColor=070b14)](#live-demo)
 [![React Three Fiber](https://img.shields.io/badge/React_Three_Fiber-v8-94a3b8?style=for-the-badge&labelColor=070b14)](https://github.com/pmndrs/react-three-fiber)
 [![License: MIT](https://img.shields.io/badge/License-MIT-e2e8f0?style=for-the-badge&labelColor=070b14)](./LICENSE)
 
@@ -23,12 +23,10 @@
 
 ---
 
-<a id="live-demo"></a>
 ## 🌐 Live & Demo
 
+- **▶ Live App:** **[luxstage.netlify.app](https://luxstage.netlify.app/)** — Works out of the box on desktop &amp; mobile (or paste your own Aholo key via **⚙ API Key**)
 - **🎬 Demo Walkthrough Video:** **[Watch on Google Drive →](https://drive.google.com/file/d/15XD_fbg4DB_7AZ4EcGKQ-a9J7YKN6xRb/view?usp=sharing)**
-- **▶ Live Playground:** *Add your deployed Netlify URL here (also link it in GitHub About → Website)*
-- **📦 Repository:** [github.com/grzdev/luxstage](https://github.com/grzdev/luxstage)
 
 ---
 
